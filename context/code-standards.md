@@ -55,6 +55,19 @@
 - **Validation & Output**: Validate extracted fields against a Zod/Pydantic schema before writing to `output/books.json`. Direct failing records to `errors.json` with reason details.
 - **Failure Resilience**: Log and skip broken individual detail pages (404s, parser errors) without throwing an uncaught exception that halts the entire job. End runs with a summary report (`output/run-report.json`).
 
+## Git Commit Conventions
+
+All Git commits across the platform must adhere to the Conventional Commits standard:
+- `feat:` for new features (e.g., `feat: Implement root and health endpoints`)
+- `fix:` for bug fixes (e.g., `fix: Handle missing title in task validation`)
+- `refactor:` for code refactoring without behavior change
+- `docs:` for documentation updates (e.g., `docs: Add README run instructions and endpoint table`)
+- `test:` for adding or updating tests
+- `chore:` for maintenance tasks (e.g., `chore: Initialize FastAPI server setup`)
+
+Use the `-m` git flag for concise or multi-line commit messages (e.g., `git commit -m "feat: Implement POST /tasks with input validation"`).
+
+
 ## File & Directory Organization
 
 - `src/` — Server entry point, route definitions, and route handlers.

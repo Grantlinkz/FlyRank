@@ -10,7 +10,7 @@ Development follows a spec-driven, stage-by-stage workflow. Context files and as
 - Prefer small, verifiable increments over large speculative code generation.
 - Do not combine unrelated system boundaries (e.g., setting up Docker infrastructure and writing scraping parsers in one step).
 - Each stage must terminate with an explicit verification checkpoint command.
-- Commit code to Git at every checkpoint (ensuring >= 1 meaningful commits per assignment).
+- Commit code to Git at every checkpoint using Conventional Commits format (`feat:`, `docs:`, `chore:`, etc. with `-m`).
 
 ## Verification Checkpoints per Milestone
 
