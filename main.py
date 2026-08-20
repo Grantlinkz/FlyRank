@@ -1,7 +1,7 @@
 from typing import Optional
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 app = FastAPI(
     title="Task API",
@@ -16,6 +16,10 @@ class Task(BaseModel):
 
 class TaskCreate(BaseModel):
     title: Optional[str] = None
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
+    done: Optional[bool] = None
 
 # In-memory storage pre-filled with 3 example tasks
 tasks_db: list[Task] = [
@@ -67,3 +71,56 @@ def create_task(payload: TaskCreate):
     new_task = Task(id=next_id, title=payload.title.strip(), done=False)
     tasks_db.append(new_task)
     return new_task
+
+@app.put("/tasks/{id}")
+def update_task(id: int, payload: TaskUpdate):
+    """Update a task's title and/or done status."""
+    task_idx = None
+    for idx, t in enumerate(tasks_db):
+        if t.id == id:
+            task_idx = idx
+            break
+            
+    if task_idx is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": f"Task {id} not found"}
+        )
+        
+    if payload.title is not None and not payload.title.strip():
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Title cannot be an empty string"}
+        )
+        
+    if payload.title is None and payload.done is None:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Request body must include at least title or done"}
+        )
+
+    current_task = tasks_db[task_idx]
+    updated_title = payload.title.strip() if payload.title is not None else current_task.title
+    updated_done = payload.done if payload.done is not None else current_task.done
+
+    updated_task = Task(id=id, title=updated_title, done=updated_done)
+    tasks_db[task_idx] = updated_task
+    return updated_task
+
+@app.delete("/tasks/{id}", status_code=204)
+def delete_task(id: int):
+    """Delete a task by ID."""
+    task_idx = None
+    for idx, t in enumerate(tasks_db):
+        if t.id == id:
+            task_idx = idx
+            break
+            
+    if task_idx is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": f"Task {id} not found"}
+        )
+        
+    tasks_db.pop(task_idx)
+    return Response(status_code=204)
