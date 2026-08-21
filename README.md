@@ -1,104 +1,115 @@
-# FlyRank To-Do CRUD API — Containerized PostgreSQL Stack
+# FlyRank To-Do CRUD API — Supabase Auth & JWT Security Stack
 
-A modern, Spec-Driven RESTful CRUD API built with Python 3.10+, FastAPI, Pydantic, PostgreSQL, Docker, and Docker Compose for the FlyRank Internship Backend Track (Week 3 Assignment A3).
+A modern, Spec-Driven RESTful CRUD API built with Python 3.10+, FastAPI, Pydantic, PostgreSQL, Docker Compose, and Supabase Auth for the FlyRank Internship Backend Track (Week 4 Assignment A4).
 
 ---
 
 ## Features
 
-- **Containerized PostgreSQL Database**: Application persistence is powered by a real PostgreSQL database server running inside a Docker container.
-- **One-Command Orchestration**: Full stack (`api` + `db`) is launched with a single command via Docker Compose (`compose.yaml`).
-- **Secrets via Environment Variables**: Zero hardcoded database credentials. Sensitive connection strings live in `.env` (git-ignored), while `.env.example` provides the committed template.
-- **Persistent Docker Volume**: PostgreSQL data lives in a named Docker volume (`taskdata`), guaranteeing data persistence across full container teardowns (`docker compose down && docker compose up`).
-- **Repository Architecture Pattern**: All database interactions, driver logic (`psycopg 3`), and parameterized SQL queries (`%s`) are encapsulated inside `database.py`.
-- **Idempotent Auto-Initialization**: Automatically creates the `tasks` schema and seeds default tasks **only when the table is empty** (seed-once rule).
-- **Interactive OpenAPI Documentation**: Built-in Swagger UI documentation hosted automatically at `http://localhost:8000/docs`.
+- **Supabase Auth Identity Provider**: Account creation, credential verification, and JSON Web Token (JWT) issuance fully delegated to Supabase Auth.
+- **Zero Local Cryptography**: Server code never touches plain or hashed passwords, following security best practices.
+- **JWT Bearer Verification Middleware**: Reusable FastAPI security dependency (`get_current_user`) verifying Bearer tokens on protected endpoints.
+- **Precise Status Code & JSON Error Shapes**:
+  - `201 Created` on signup.
+  - `200 OK` on login & profile lookup.
+  - `204 No Content` on logout.
+  - `400 Bad Request` with `{ "error": "Email and password are required" }` on missing inputs.
+  - `401 Unauthorized` with `{ "error": "Access token required" }` or `{ "error": "Invalid or expired token" }` on auth failures.
+- **Interactive Swagger UI Authorize Padlock**: Configured OpenAPI `HTTPBearer` security scheme allowing direct authentication testing from `http://localhost:8000/docs`.
+- **Public & Protected Gates**: Public lobby endpoint (`GET /public/info`) alongside user-protected endpoints (`GET /protected/profile`, `POST /auth/logout`).
 
 ---
 
-## Quickstart & Local Execution
+## Environment Setup & Secrets
 
-### Prerequisites
+Authentication secrets are managed via environment variables.
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running.
-- Python 3.10+ (if running locally outside Docker).
-
-### Running the Whole Stack (Single Command)
-
-1. Clone or navigate to the repository directory:
-   ```bash
-   cd FlyRank
-   ```
-
-2. Copy the environment template to create your `.env` file:
+1. Copy `.env.example` to `.env` (git-ignored):
    ```bash
    cp .env.example .env
    ```
 
-3. Launch the containerized application and database stack:
-   ```bash
-   docker compose up --build
-   ```
-
-4. Open your browser to test interactive Swagger UI docs:
-   ```
-   http://localhost:8000/docs
-   ```
-
-5. Tear down the stack while keeping stored data intact:
-   ```bash
-   docker compose down
+2. Configure your Supabase project credentials in `.env`:
+   ```env
+   DATABASE_URL=postgresql://postgres:dev@localhost:5432/tasks
+   SUPABASE_URL=https://your-project-id.supabase.co
+   SUPABASE_KEY=your-supabase-anon-key
    ```
 
 ---
 
 ## Endpoint Reference Table
 
-| CRUD Operation | HTTP Method | Endpoint | Status Codes | PostgreSQL Query Shape | Description |
+| Category | HTTP Method | Endpoint | Auth Required | Status Codes | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Metadata** | `GET` | `/` | `200` | — | Returns API name, version, and primary endpoint list |
-| **Health Probe** | `GET` | `/health` | `200` | — | Liveness check returning `{"status": "ok"}` |
-| **Read (List)** | `GET` | `/tasks` | `200` | `SELECT * FROM tasks WHERE ...` | List all tasks. Supports filtering via `?done=true/false` & `?search=term` |
-| **Read (Single)**| `GET` | `/tasks/{id}` | `200`, `404` | `SELECT * FROM tasks WHERE id = %s` | Retrieve a single task by ID |
-| **Create** | `POST` | `/tasks` | `201`, `400` | `INSERT INTO tasks (title, done) VALUES (%s, FALSE) RETURNING *` | Create new task with title validation |
-| **Update** | `PUT` | `/tasks/{id}` | `200`, `400`, `404` | `UPDATE tasks SET title = %s, done = %s WHERE id = %s RETURNING *` | Update task title and/or done completion status |
-| **Delete** | `DELETE` | `/tasks/{id}` | `204`, `404` | `DELETE FROM tasks WHERE id = %s` | Remove task by ID |
-| **Stats** | `GET` | `/stats` | `200` | `SELECT COUNT(*) FROM tasks ...` | Returns total, completed, and open task metrics |
-| **Reset** | `POST` | `/reset` | `200` | `DELETE FROM tasks; INSERT INTO ...` | Resets database to default sample tasks |
+| **Public Gate** | `GET` | `/public/info` | None | `200` | Public open endpoint returning welcome message |
+| **User Auth** | `POST` | `/auth/signup` | None | `201`, `400` | Registers user account via Supabase Auth |
+| **User Auth** | `POST` | `/auth/login` | None | `200`, `400`, `401` | Authenticates credentials and returns JWT `access_token` |
+| **User Auth** | `POST` | `/auth/logout` | Bearer Token | `204`, `401` | Ends user session in Supabase Auth |
+| **Protected Profile**| `GET` | `/protected/profile` | Bearer Token | `200`, `401` | Returns verified user profile metadata |
+| **Metadata** | `GET` | `/` | None | `200` | API metadata and endpoint index |
+| **Health Probe** | `GET` | `/health` | None | `200` | Liveness check |
+| **Task CRUD** | `GET`, `POST`, `PUT`, `DELETE` | `/tasks`, `/tasks/{id}` | None | `200`, `201`, `204`, `400`, `404` | PostgreSQL-backed task management |
 
 ---
 
-## Database Inspection via `psql`
+## Using Swagger UI Bearer Authorization (`/docs`)
 
-To inspect the PostgreSQL database inside the running container, execute the interactive `psql` shell:
+FastAPI renders an interactive Swagger UI documentation interface with built-in Bearer authentication support:
 
+1. Open `http://localhost:8000/docs` in your browser.
+2. Execute `POST /auth/login` with your credentials and copy the returned `access_token`.
+3. Click the **Authorize** padlock button at the top right of Swagger UI.
+4. Paste the `access_token` into the Value field and click **Authorize**.
+5. All protected endpoints (`GET /protected/profile`, `POST /auth/logout`) can now be tested directly from the browser!
+
+---
+
+## Hand-Executed `curl` Commands
+
+### 1. Register User Account (`POST /auth/signup`)
 ```bash
-# 1. Connect to PostgreSQL inside container
-docker exec -it flyrank-db-1 psql -U postgres -d tasks
+curl -i -X POST http://localhost:8000/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"password123"}'
+```
 
-# 2. Inspect table schema
-\dt
+### 2. Login to Obtain Access Token (`POST /auth/login`)
+```bash
+curl -i -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"password123"}'
+```
 
-# 3. Query task records
-SELECT * FROM tasks;
+### 3. Call Protected Profile Endpoint (`GET /protected/profile`)
+```bash
+curl -i http://localhost:8000/protected/profile \
+  -H "Authorization: Bearer <PASTE_ACCESS_TOKEN_HERE>"
+```
+
+### 4. Tampered Token Rejection Test (`401 Unauthorized`)
+```bash
+curl -i http://localhost:8000/protected/profile \
+  -H "Authorization: Bearer invalid.tampered.token"
+# Returns 401 Unauthorized: { "error": "Invalid or expired token" }
 ```
 
 ---
 
-## AI Rematch ("AI vs Me") — Stage 6 Containerized Stack Report
+## AI Rematch ("AI vs Me") — Stage 7 Security Audit Report
 
-As required by Stage 6 of Assignment A3, an AI assistant was prompted in quarantine (`ai-version/main.py`) to containerize the task CRUD API onto PostgreSQL:
+As required by Stage 7 of Assignment A4, an AI assistant was prompted in quarantine (`ai-version/main.py`) to implement Supabase authentication for comparison:
 
 ### 1. Full AI Prompt Used
-> *"Write a Docker Compose file and FastAPI application using PostgreSQL (`psycopg`) to persist a To-Do CRUD API. Create a `tasks` table with `id`, `title`, and `done`. Read connection string from `.env`, seed initial tasks on startup, enforce non-empty title validation, use parameterized queries, and configure volume persistence."*
+> *"Write a FastAPI application integrated with Supabase Auth to handle `/auth/signup`, `/auth/login`, `/auth/logout`, and `/protected/profile`. Enforce JWT token verification via a reusable Bearer security dependency, configure OpenAPI HTTPBearer for Swagger UI, and return strict JSON error messages for missing tokens and invalid credentials."*
 
-### 2. Three Concrete Differences Found
+### 2. Three Concrete Security Differences Found
 
-| Category | Hand-Crafted Code (`compose.yaml` + `database.py`) | AI-Generated Code (`ai-version/`) |
+| Category | Hand-Crafted Code (`auth.py` + `main.py`) | AI-Generated Code (`ai-version/`) |
 | :--- | :--- | :--- |
-| **Volume Persistence & Service Discovery** | Configured `taskdata` named volume mount and database host `db:5432` matching Compose service network name. | Forgot volume configuration or hardcoded `localhost:5432` inside container code, breaking container-to-container networking. |
-| **Seed-Once Idempotency** | Checks `SELECT COUNT(*) FROM tasks` before inserting default records. Restarts preserve user data. | Executes `INSERT` on every startup without checking existing row count, causing duplicate seed tasks on every container restart. |
-| **Secrets & Security** | Connection string completely decoupled via `.env` (git-ignored) with committed `.env.example` template. | Hardcoded fallback connection string with database password in source code. |
+| **Token Extraction Safety** | Uses FastAPI `HTTPBearer(auto_error=False)` and cleanly extracts token string, returning `{ "error": "Access token required" }` for missing/malformed headers. | Used raw `Header(None)` and executed `authorization.split(" ")[1]`, causing uncaught `IndexError` / server 500 when malformed headers were sent. |
+| **Error Contract Adherence** | Intercepts all Supabase and auth errors to return exact standard JSON (`400 Bad Request`, `401 Unauthorized`). | Allowed raw Supabase exceptions to bubble up as internal server errors or default FastAPI `422` / `500` detail shapes. |
+| **Reusable Dependency Architecture** | Encapsulates token verification in `auth.get_current_user` dependency module, easily reusable across any protected route. | Embedded inline header checks inside individual route functions, creating repetitive code and risk of unverified endpoints. |
 
-### 3. Takeaways
-Containerized multi-service orchestration requires explicit service discovery, volume mapping, health checks, and environment variable management to achieve production parity.
+### 3. Key Takeaway
+Security logic must handle invalid, malformed, and tampered inputs gracefully at the boundary without exposing tracebacks or crashing the server thread.
