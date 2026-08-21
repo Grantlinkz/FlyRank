@@ -30,47 +30,50 @@ def get_db_connection():
         url = DATABASE_URL
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql://", 1)
-        conn = psycopg.connect(url, row_factory=dict_row)
+        conn = psycopg.connect(url, row_factory=dict_row, connect_timeout=3)
         return conn
 
 def init_db() -> None:
     """Initialize database table and seed initial tasks only if the table is empty."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        if is_sqlite():
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS tasks (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    title TEXT NOT NULL,
-                    done INTEGER NOT NULL DEFAULT 0
-                )
-            """)
-            cursor.execute("SELECT COUNT(*) FROM tasks")
-            count = cursor.fetchone()[0]
-            if count == 0:
-                cursor.executemany(
-                    "INSERT INTO tasks (title, done) VALUES (?, ?)",
-                    [(t[0], 1 if t[1] else 0) for t in INITIAL_TASKS]
-                )
-                conn.commit()
-        else:
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS tasks (
-                    id SERIAL PRIMARY KEY,
-                    title TEXT NOT NULL,
-                    done BOOLEAN NOT NULL DEFAULT FALSE
-                )
-            """)
-            cursor.execute("SELECT COUNT(*) FROM tasks")
-            row = cursor.fetchone()
-            count = row[0] if isinstance(row, tuple) else row["count"]
-            if count == 0:
-                for title, done in INITIAL_TASKS:
-                    cursor.execute(
-                        "INSERT INTO tasks (title, done) VALUES (%s, %s)",
-                        (title, done)
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            if is_sqlite():
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS tasks (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        title TEXT NOT NULL,
+                        done INTEGER NOT NULL DEFAULT 0
                     )
-                conn.commit()
+                """)
+                cursor.execute("SELECT COUNT(*) FROM tasks")
+                count = cursor.fetchone()[0]
+                if count == 0:
+                    cursor.executemany(
+                        "INSERT INTO tasks (title, done) VALUES (?, ?)",
+                        [(t[0], 1 if t[1] else 0) for t in INITIAL_TASKS]
+                    )
+                    conn.commit()
+            else:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS tasks (
+                        id SERIAL PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        done BOOLEAN NOT NULL DEFAULT FALSE
+                    )
+                """)
+                cursor.execute("SELECT COUNT(*) FROM tasks")
+                row = cursor.fetchone()
+                count = row[0] if isinstance(row, tuple) else row["count"]
+                if count == 0:
+                    for title, done in INITIAL_TASKS:
+                        cursor.execute(
+                            "INSERT INTO tasks (title, done) VALUES (%s, %s)",
+                            (title, done)
+                        )
+                    conn.commit()
+    except Exception as e:
+        print(f"Notice: DB auto-init deferred until database connection is available ({e})")
 
 def task_row_to_dict(row: Any) -> Dict[str, Any]:
     """Convert database row object/dict to standard API task dictionary."""
