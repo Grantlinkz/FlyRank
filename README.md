@@ -1,16 +1,28 @@
-# FlyRank To-Do CRUD API — Python FastAPI Lane
+# FlyRank To-Do CRUD API — SQLite Database Persistence
 
-A modern, Spec-Driven RESTful CRUD API built with Python 3.10+, FastAPI, and Pydantic for the FlyRank Internship Backend Track (Week 2 Assignment A1).
+A modern, Spec-Driven RESTful CRUD API built with Python 3.10+, FastAPI, Pydantic, and SQLite for the FlyRank Internship Backend Track (Week 3 Assignment A2).
 
 ---
 
 ## Features
 
-- **Standardized RESTful Endpoints**: Full CRUD operations for managing tasks in memory (`GET`, `POST`, `PUT`, `DELETE`).
-- **Strict Status Code Semantics**: Precise HTTP response codes (`200 OK`, `201 Created`, `204 No Content`, `400 Bad Request`, `404 Not Found`).
-- **Input Validation**: Rejects empty payloads or missing required fields (`title`) with clear JSON error responses (`{ "error": "..." }`).
+- **SQLite Persistent Storage**: Task data is stored on disk in a lightweight SQLite database (`tasks.db`), surviving application restarts.
+- **Repository Architecture Pattern**: Database access code is fully isolated in `database.py`, keeping FastAPI route handlers clean and decoupled.
+- **Idempotent Auto-Initialization**: Automatically creates `tasks.db` and the `tasks` schema on startup, seeding initial sample data **only when empty** (seed-once rule).
+- **Strict Parameterized SQL Queries**: All database operations use SQL placeholders (`?`) to prevent SQL injection vulnerabilities.
+- **Standardized RESTful Endpoints**: Full CRUD operations (`GET`, `POST`, `PUT`, `DELETE`) adhering to precise HTTP status code semantics (`200`, `201`, `204`, `400`, `404`).
 - **Interactive OpenAPI Documentation**: Built-in Swagger UI documentation hosted automatically at `http://localhost:8000/docs`.
-- **Extras & Query Extensions**: Filtering by status (`?done=true`), title search (`?search=keyword`), live metrics (`GET /stats`), and instant state reset (`POST /reset`).
+- **SQL-Powered Extras**: Server-side filtering (`?done=true`), title pattern search (`?search=keyword` with SQL `LIKE`), direct SQL metrics (`GET /stats`), and database state reset (`POST /reset`).
+
+---
+
+## Why SQLite?
+
+SQLite was chosen for this storage layer migration because:
+1. **Zero Configuration**: SQLite requires no separate background database server process, installation, or administration.
+2. **Single-File Simplicity**: The entire relational database lives inside one local file (`tasks.db`).
+3. **True Persistence**: Unlike in-memory data structures, disk writes ensure task data survives server shutdowns and restarts.
+4. **Git Isolation**: `tasks.db` is listed in `.gitignore` so every repository clone starts fresh with automatic database creation on first run.
 
 ---
 
@@ -20,17 +32,18 @@ A modern, Spec-Driven RESTful CRUD API built with Python 3.10+, FastAPI, and Pyd
 
 - Python 3.10+ installed on your system.
 
-### Running the API
+### Running the Application
 
 1. Clone or navigate to the repository directory:
    ```bash
    cd FlyRank
    ```
 
-2. Run the server using Uvicorn (single command):
+2. Start the Uvicorn dev server (single command):
    ```bash
    python -m uvicorn main:app --reload --port 8000
    ```
+   > *On startup, `tasks.db` will be created automatically if missing and seeded with 3 default tasks.*
 
 3. Open your browser to test interactive Swagger UI docs:
    ```
@@ -41,93 +54,57 @@ A modern, Spec-Driven RESTful CRUD API built with Python 3.10+, FastAPI, and Pyd
 
 ## Endpoint Reference Table
 
-| CRUD Operation | HTTP Method | Endpoint | Status Codes | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| **Metadata** | `GET` | `/` | `200` | Returns API name, version, and primary endpoint list |
-| **Health Probe** | `GET` | `/health` | `200` | Liveness check returning `{"status": "ok"}` |
-| **Read (List)** | `GET` | `/tasks` | `200` | List all tasks. Supports `?done=true/false` & `?search=term` |
-| **Read (Single)**| `GET` | `/tasks/{id}` | `200`, `404` | Retrieve a single task by ID |
-| **Create** | `POST` | `/tasks` | `201`, `400` | Create new task with title validation (`done` defaults to `false`) |
-| **Update** | `PUT` | `/tasks/{id}` | `200`, `400`, `404` | Update task title and/or done completion status |
-| **Delete** | `DELETE` | `/tasks/{id}` | `204`, `404` | Remove task by ID |
-| **Stats** | `GET` | `/stats` | `200` | Returns total, completed, and open task count metrics |
-| **Reset** | `POST` | `/reset` | `200` | Resets in-memory database to default sample tasks |
+| CRUD Operation | HTTP Method | Endpoint | Status Codes | SQL Query Shape | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Metadata** | `GET` | `/` | `200` | — | Returns API name, version, and primary endpoint list |
+| **Health Probe** | `GET` | `/health` | `200` | — | Liveness check returning `{"status": "ok"}` |
+| **Read (List)** | `GET` | `/tasks` | `200` | `SELECT * FROM tasks WHERE ...` | List all tasks. Supports SQL filtering via `?done=true/false` & `?search=term` |
+| **Read (Single)**| `GET` | `/tasks/{id}` | `200`, `404` | `SELECT * FROM tasks WHERE id = ?` | Retrieve a single task by ID |
+| **Create** | `POST` | `/tasks` | `201`, `400` | `INSERT INTO tasks (title, done) VALUES (?, 0)` | Create new task with title validation |
+| **Update** | `PUT` | `/tasks/{id}` | `200`, `400`, `404` | `UPDATE tasks SET title = ?, done = ? WHERE id = ?` | Update task title and/or done completion status |
+| **Delete** | `DELETE` | `/tasks/{id}` | `204`, `404` | `DELETE FROM tasks WHERE id = ?` | Remove task by ID |
+| **Stats** | `GET` | `/stats` | `200` | `SELECT COUNT(*) FROM tasks ...` | Returns total, completed, and open task metrics |
+| **Reset** | `POST` | `/reset` | `200` | `DELETE FROM tasks; INSERT INTO ...` | Resets database to default sample tasks |
 
 ---
 
-## Verified Sample Terminal Output (`curl -i`)
+## Hand-Executed SQL Queries (Stage 4 Exploration)
 
-### 1. Root & Health Check (`GET /`, `GET /health`)
-```http
-HTTP/1.1 200 OK
-content-type: application/json
+Using **DB Browser for SQLite** (or the SQLite CLI), the database file (`tasks.db`) can be opened directly to execute queries by hand. The API and DB Browser operate on the exact same single source of truth.
 
-{
-  "name": "Task API",
-  "version": "1.0",
-  "endpoints": ["/tasks"]
-}
-```
+```sql
+-- 1. List every task in the database
+SELECT * FROM tasks;
 
-### 2. Create Task (`POST /tasks`)
-```http
-HTTP/1.1 201 Created
-content-type: application/json
+-- 2. List only completed tasks
+SELECT * FROM tasks WHERE done = 1;
 
-{
-  "id": 4,
-  "title": "Buy milk",
-  "done": false
-}
-```
+-- 3. Count total tasks stored
+SELECT COUNT(*) FROM tasks;
 
-### 3. Create Task Validation Error (`POST /tasks` with empty title)
-```http
-HTTP/1.1 400 Bad Request
-content-type: application/json
+-- 4. Mark all tasks as completed
+UPDATE tasks SET done = 1;
 
-{
-  "error": "Title is required and cannot be empty"
-}
-```
-
-### 4. Single Task Lookup Not Found (`GET /tasks/99`)
-```http
-HTTP/1.1 404 Not Found
-content-type: application/json
-
-{
-  "error": "Task 99 not found"
-}
-```
-
-### 5. Delete Task (`DELETE /tasks/1`)
-```http
-HTTP/1.1 204 No Content
+-- 5. Clean up completed tasks
+DELETE FROM tasks WHERE done = 1;
 ```
 
 ---
 
-## In-Memory Storage & The Mortality Experiment
+## AI Rematch ("AI vs Me") — Stage 6 Report
 
-This API stores task records in Python in-memory data structures (`tasks_db`). 
+As required by Stage 6 of Assignment A2, an AI assistant was prompted in quarantine (`ai-version/main.py`) to migrate the in-memory CRUD API to SQLite for comparison against the hand-crafted codebase:
 
-> [!NOTE]
-> **Observation**: Creating new tasks or updating existing tasks mutates the state in memory. However, restarting the Uvicorn server processes resets the application state back to the initial sample tasks.
-> **Why this matters**: In-memory storage is fast and zero-config for development, but volatile. This observation is the primary motivation for Week 3's milestone: connecting the CRUD API to persistent SQLite and containerized PostgreSQL databases.
+### 1. Full AI Prompt Used
+> *"Write a FastAPI application using SQLite (`sqlite3`) to persist a To-Do task API. Create a `tasks` table with `id`, `title`, and `done`. Seed initial tasks on startup, enforce non-empty title validation on `POST /tasks`, use parameterized SQL queries, and return standard JSON error responses."*
 
----
+### 2. Three Concrete Differences Found
 
-## Bonus: AI Rematch ("AI vs Me")
+| Category | Hand-Crafted Code (`database.py` + `main.py`) | AI-Generated Code (`ai-version/main.py`) |
+| :--- | :--- | :--- |
+| **Seed-Once Idempotency** | Checks `SELECT COUNT(*) FROM tasks` before inserting default records. Restarts preserve existing user data without duplication. | Calls `INSERT` on every startup without checking existing row count, causing duplicate seed tasks on every server restart. |
+| **Error Handling & Contracts** | Returns standard HTTP `400 Bad Request` with custom `{ "error": "Title is required..." }` JSON shape. | Raised generic `HTTPException(400)` or relied on default FastAPI `422 Unprocessable Entity`, breaking client error shape contracts. |
+| **Architecture & Separation** | Implements clean Repository pattern separating SQL queries (`database.py`) from FastAPI route logic (`main.py`). | Embedded direct `sqlite3.connect()` calls inside route handlers, mixing storage, connection management, and HTTP routing logic. |
 
-As part of the FlyRank curriculum Stage 7 AI Rematch protocol, an AI assistant was prompted to independently generate the same FastAPI CRUD API in an isolated `ai-version/` module for comparison:
-
-1. **What the AI did well**:
-   - Fast initial endpoint scaffolding using FastAPI routing decorators.
-   - Used Pydantic schemas out of the box for JSON parsing.
-2. **What the AI missed or got wrong**:
-   - Returned FastAPI default `422 Unprocessable Entity` for empty title validation instead of the strict required business rule `400 Bad Request` with custom `{ "error": "..." }` JSON shape.
-   - Failed to handle empty/whitespace string validation (`title=""`) without explicit string trimming logic.
-   - Omitted custom endpoint tag groupings and detailed OpenAPI field examples in Swagger UI.
-3. **Prompt precision takeaways**:
-   - Explicitly naming required error status codes (`400` vs `422`) and error response schemas in system prompts is critical for exact specification adherence.
+### 3. Prompt Specification Takeaway
+AI outputs strictly mirror prompt precision. Specifying architectural patterns (Repository layer), exact HTTP status codes (`400` vs `422`), error JSON schemas, and row count checks for seed idempotency are necessary to avoid silent design compromises.
