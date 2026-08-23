@@ -1,12 +1,14 @@
 from contextlib import asynccontextmanager
 from typing import Optional, List, Dict, Any
-from fastapi import FastAPI, Response, Query, Depends, Request
+from fastapi import FastAPI, Response, Query, Depends, Request, Security
+from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 import database
 import auth
 from auth import get_current_user, AuthException
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -182,12 +184,14 @@ def login(payload: LoginRequest):
     description="Ends the user's session in Supabase Auth. Requires Bearer JWT in Authorization header.",
     tags=["Auth Protected"]
 )
-def logout(current_user: Any = Depends(get_current_user)):
+def logout(credentials: Optional[HTTPAuthorizationCredentials] = Security(auth.security_scheme)):
     """End user session and invalidate token."""
-    try:
-        auth.supabase.auth.sign_out()
-    except Exception:
-        pass
+    if not credentials or not credentials.credentials:
+        raise AuthException(401, "Access token required")
+    token = credentials.credentials.strip()
+    if not token:
+        raise AuthException(401, "Access token required")
+    auth.logout_user(token)
     return Response(status_code=204)
 
 @app.get(
@@ -222,13 +226,14 @@ def get_stats():
 @app.post(
     "/reset",
     summary="Reset Task Database",
-    description="Restores the database to default sample tasks.",
+    description="Restores the database to default sample tasks. Protected by server-side authentication check.",
     tags=["Extras"]
 )
-def reset_tasks():
+def reset_tasks(current_user: Any = Depends(get_current_user)):
     """Reset database table to default sample tasks."""
     tasks = database.reset_db()
     return {"message": "Database reset to default 3 sample tasks", "tasks": tasks}
+
 
 @app.get(
     "/tasks",

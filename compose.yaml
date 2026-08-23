@@ -4,7 +4,10 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://postgres:dev@db:5432/tasks
+      # DATABASE_URL uses the Compose service name 'db'. Password will be URI-percent-encoded if containing reserved characters.
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/tasks
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_KEY: ${SUPABASE_KEY}
     depends_on:
       db:
         condition: service_started
@@ -13,7 +16,10 @@ services:
     image: postgres:16-alpine
     restart: always
     environment:
-      POSTGRES_PASSWORD: dev
+      # Note: POSTGRES_PASSWORD sets superuser password during volume initialization.
+      # Credential Rotation: If taskdata volume already exists, updating POSTGRES_PASSWORD in .env requires running:
+      #   docker compose exec db psql -U postgres -c "ALTER USER postgres WITH PASSWORD 'new_password';"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: tasks
     ports:
       - "5432:5432"

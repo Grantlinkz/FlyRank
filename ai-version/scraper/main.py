@@ -10,25 +10,42 @@ import json
 BASE_URL = "https://books.toscrape.com/catalogue/page-1.html"
 
 def ai_scrape():
-    # AI mistake: Generic User-Agent or default Python requests User-Agent
-    res = requests.get(BASE_URL)
+    try:
+        res = requests.get(BASE_URL, timeout=10)
+        if res.status_code != 200:
+            raise RuntimeError(f"Failed to fetch base page, status {res.status_code}")
+    except Exception as e:
+        print(f"Request error fetching base page: {e}")
+        raise RuntimeError(f"Request error fetching base page: {e}") from e
+
     soup = BeautifulSoup(res.text, "html.parser")
     
     books = []
     pods = soup.find_all("article", class_="product_pod")
     for pod in pods:
-        link = pod.find("h3").find("a")["href"]
-        # AI mistake: String concatenation instead of urljoin (breaks on relative paths)
+        h3 = pod.find("h3")
+        a_tag = h3.find("a") if h3 else None
+        if not a_tag or not a_tag.get("href"):
+            continue
+        link = a_tag["href"]
         full_url = "https://books.toscrape.com/catalogue/" + link.replace("../", "")
         
-        # AI mistake: No delay between requests, no local caching, no retry logic
-        b_res = requests.get(full_url)
-        # AI mistake: Crashes if page is 404 or missing title element
-        b_soup = BeautifulSoup(b_res.text, "html.parser")
-        title = b_soup.find("h1").text
-        price = b_soup.find("p", class_="price_color").text
-        
-        books.append({"title": title, "price": price, "url": full_url})
+        try:
+            b_res = requests.get(full_url, timeout=10)
+            if b_res.status_code != 200:
+                continue
+            b_soup = BeautifulSoup(b_res.text, "html.parser")
+            h1 = b_soup.find("h1")
+            price_tag = b_soup.find("p", class_="price_color")
+            if not h1 or not price_tag:
+                continue
+            title = h1.text.strip()
+            price = price_tag.text.strip()
+            books.append({"title": title, "price": price, "url": full_url})
+        except Exception as err:
+            print(f"Error processing {full_url}: {err}")
+            continue
+
         
     with open("ai_books.json", "w") as f:
         json.dump(books, f, indent=2)

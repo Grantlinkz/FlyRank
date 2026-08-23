@@ -26,54 +26,63 @@ def get_db_connection():
         return conn
     else:
         import psycopg
+        import urllib.parse
         from psycopg.rows import dict_row
         url = DATABASE_URL
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql://", 1)
+        try:
+            parsed = urllib.parse.urlsplit(url)
+            if parsed.username and parsed.password:
+                encoded_password = urllib.parse.quote(parsed.password, safe="")
+                netloc = f"{parsed.username}:{encoded_password}@{parsed.hostname}"
+                if parsed.port:
+                    netloc += f":{parsed.port}"
+                url = urllib.parse.urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
+        except Exception:
+            pass
         conn = psycopg.connect(url, row_factory=dict_row, connect_timeout=3)
         return conn
 
 def init_db() -> None:
     """Initialize database table and seed initial tasks only if the table is empty."""
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            if is_sqlite():
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS tasks (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        title TEXT NOT NULL,
-                        done INTEGER NOT NULL DEFAULT 0
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        if is_sqlite():
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    done INTEGER NOT NULL DEFAULT 0
+                )
+            """)
+            cursor.execute("SELECT COUNT(*) FROM tasks")
+            count = cursor.fetchone()[0]
+            if count == 0:
+                cursor.executemany(
+                    "INSERT INTO tasks (title, done) VALUES (?, ?)",
+                    [(t[0], 1 if t[1] else 0) for t in INITIAL_TASKS]
+                )
+                conn.commit()
+        else:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id SERIAL PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    done BOOLEAN NOT NULL DEFAULT FALSE
+                )
+            """)
+            cursor.execute("SELECT COUNT(*) FROM tasks")
+            row = cursor.fetchone()
+            count = row[0] if isinstance(row, tuple) else row["count"]
+            if count == 0:
+                for title, done in INITIAL_TASKS:
+                    cursor.execute(
+                        "INSERT INTO tasks (title, done) VALUES (%s, %s)",
+                        (title, done)
                     )
-                """)
-                cursor.execute("SELECT COUNT(*) FROM tasks")
-                count = cursor.fetchone()[0]
-                if count == 0:
-                    cursor.executemany(
-                        "INSERT INTO tasks (title, done) VALUES (?, ?)",
-                        [(t[0], 1 if t[1] else 0) for t in INITIAL_TASKS]
-                    )
-                    conn.commit()
-            else:
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS tasks (
-                        id SERIAL PRIMARY KEY,
-                        title TEXT NOT NULL,
-                        done BOOLEAN NOT NULL DEFAULT FALSE
-                    )
-                """)
-                cursor.execute("SELECT COUNT(*) FROM tasks")
-                row = cursor.fetchone()
-                count = row[0] if isinstance(row, tuple) else row["count"]
-                if count == 0:
-                    for title, done in INITIAL_TASKS:
-                        cursor.execute(
-                            "INSERT INTO tasks (title, done) VALUES (%s, %s)",
-                            (title, done)
-                        )
-                    conn.commit()
-    except Exception as e:
-        print(f"Notice: DB auto-init deferred until database connection is available ({e})")
+                conn.commit()
+
 
 def task_row_to_dict(row: Any) -> Dict[str, Any]:
     """Convert database row object/dict to standard API task dictionary."""
@@ -145,38 +154,44 @@ def create_task(title: str) -> Dict[str, Any]:
             return task_row_to_dict(row)
 
 def update_task(task_id: int, title: Optional[str] = None, done: Optional[bool] = None) -> Optional[Dict[str, Any]]:
-    """Update title and/or done status of a task by ID."""
-    existing = get_task_by_id(task_id)
-    if not existing:
-        return None
-        
-    new_title = title.strip() if title is not None else existing["title"]
-    new_done = done if done is not None else existing["done"]
+    """Update title and/or done status of a task by ID dynamically updating only supplied fields."""
+    clean_title = title.strip() if title is not None else None
+    
+    set_clauses: List[str] = []
+    params: List[Any] = []
+    placeholder = "?" if is_sqlite() else "%s"
+
+    if clean_title is not None:
+        set_clauses.append(f"title = {placeholder}")
+        params.append(clean_title)
+
+    if done is not None:
+        set_clauses.append(f"done = {placeholder}")
+        params.append(1 if is_sqlite() and done else (0 if is_sqlite() else done))
+
+    if not set_clauses:
+        return get_task_by_id(task_id)
+
+    params.append(task_id)
+    query = f"UPDATE tasks SET {', '.join(set_clauses)} WHERE id = {placeholder}"
     
     with get_db_connection() as conn:
         cursor = conn.cursor()
         if is_sqlite():
-            cursor.execute(
-                "UPDATE tasks SET title = ?, done = ? WHERE id = ?",
-                (new_title, 1 if new_done else 0, task_id)
-            )
+            cursor.execute(query, params)
             conn.commit()
+            if cursor.rowcount == 0:
+                return None
             return get_task_by_id(task_id)
         else:
-            cursor.execute(
-                "UPDATE tasks SET title = %s, done = %s WHERE id = %s RETURNING id, title, done",
-                (new_title, new_done, task_id)
-            )
-            row = cursor.fetchone()
+            ret_query = query + " RETURNING id, title, done"
+            cursor.execute(ret_query, params)
+            updated_row = cursor.fetchone()
             conn.commit()
-            return task_row_to_dict(row) if row else None
+            return task_row_to_dict(updated_row) if updated_row else None
 
 def delete_task(task_id: int) -> bool:
-    """Delete a task by ID. Return True if deleted, False if task did not exist."""
-    existing = get_task_by_id(task_id)
-    if not existing:
-        return False
-        
+    """Delete a task by ID atomically on a single database connection. Return True if deleted, False if task did not exist."""
     placeholder = "?" if is_sqlite() else "%s"
     query = f"DELETE FROM tasks WHERE id = {placeholder}"
     
@@ -184,7 +199,8 @@ def delete_task(task_id: int) -> bool:
         cursor = conn.cursor()
         cursor.execute(query, (task_id,))
         conn.commit()
-        return True
+        return cursor.rowcount > 0
+
 
 def get_task_stats() -> Dict[str, int]:
     """Compute task count statistics directly using SQL queries."""

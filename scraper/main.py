@@ -21,6 +21,8 @@ from fetcher import fetch_html, USER_AGENT, TIMEOUT
 from parser import extract_book_links, extract_next_catalogue_url, extract_raw_book_details
 from validator import validate_and_normalize_records
 
+from urllib.robotparser import RobotFileParser
+
 BASE_URL = "https://books.toscrape.com/catalogue/page-1.html"
 ROBOTS_URL = "https://books.toscrape.com/robots.txt"
 OUTPUT_DIR = os.path.join(script_dir, "output")
@@ -28,17 +30,23 @@ OUTPUT_DIR = os.path.join(script_dir, "output")
 def ensure_output_dir():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-def check_robots_txt():
-    """Request robots.txt once and confirm site rules."""
+def check_robots_txt() -> RobotFileParser:
+    """Request robots.txt once, parse rules, and return a RobotFileParser instance."""
     print("Checking robots.txt...")
+    rp = RobotFileParser()
+    rp.set_url(ROBOTS_URL)
     try:
         res = requests.get(ROBOTS_URL, headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT)
         if res.status_code == 200:
+            rp.parse(res.text.splitlines())
             print(f"robots.txt checked ({len(res.text)} bytes)")
         else:
             print(f"Notice: robots.txt returned status {res.status_code}")
+            rp.parse([])
     except Exception as e:
         print(f"Notice: robots.txt request note: {e}")
+        rp.parse([])
+    return rp
 
 def run_scraper(limit_catalogue_pages: int = 3, add_fake_failure: bool = True):
     """Run the polite scraping pipeline end-to-end."""
@@ -47,19 +55,23 @@ def run_scraper(limit_catalogue_pages: int = 3, add_fake_failure: bool = True):
     start_time_iso = start_time_dt.isoformat()
     start_ts = time.time()
     
-    check_robots_txt()
+    rp = check_robots_txt()
     
     total_pages_fetched = 0
     total_cache_hits = 0
     failed_pages_count = 0
     
-    # 1. Discover 3 catalogue pages & book URLs
+    # 1. Discover catalogue pages & book URLs
     catalogue_url = BASE_URL
     catalogue_pages_visited = 0
     all_book_urls: List[str] = []
     
     print("\n--- STAGE 1 & 2: Discovering Catalogue Pages ---")
     while catalogue_url and catalogue_pages_visited < limit_catalogue_pages:
+        if not rp.can_fetch(USER_AGENT, catalogue_url):
+            print(f"Skipping robots.txt disallowed catalogue URL: {catalogue_url}")
+            break
+            
         catalogue_pages_visited += 1
         cache_name = f"catalogue-page-{catalogue_pages_visited}.html"
         
@@ -81,12 +93,15 @@ def run_scraper(limit_catalogue_pages: int = 3, add_fake_failure: bool = True):
             failed_pages_count += 1
             break
             
-    print(f"Discovered {len(all_book_urls)} unique book URLs across {catalogue_pages_visited} catalogue pages.")
+    discovered_url_count = len(all_book_urls)
+    print(f"Discovered {discovered_url_count} unique book URLs across {catalogue_pages_visited} catalogue pages.")
     
     # Intentionally inject 1 fake/broken URL to prove failure resilience
+    injected_urls_count = 0
     if add_fake_failure:
         fake_url = "https://books.toscrape.com/catalogue/non-existent-broken-book_9999/index.html"
         all_book_urls.append(fake_url)
+        injected_urls_count = 1
         print(f"Injected 1 fake broken URL for failure resilience verification: {fake_url}")
         
     # 2. Extract Raw Details for Each Book
@@ -94,6 +109,10 @@ def run_scraper(limit_catalogue_pages: int = 3, add_fake_failure: bool = True):
     raw_books: List[Dict[str, Any]] = []
     
     for idx, book_url in enumerate(all_book_urls, 1):
+        if not rp.can_fetch(USER_AGENT, book_url):
+            print(f"Skipping robots.txt disallowed book URL: {book_url}")
+            continue
+
         slug = book_url.split("/")[-2] if "/" in book_url else f"book-{idx}"
         cache_name = f"book-{slug}.html"
         fetched_at_str = datetime.now(timezone.utc).isoformat()
@@ -153,11 +172,13 @@ def run_scraper(limit_catalogue_pages: int = 3, add_fake_failure: bool = True):
     duration = round(time.time() - start_ts, 2)
     report = {
         "target": "Books to Scrape (https://books.toscrape.com)",
-        "scope": f"First {catalogue_pages_visited} catalogue pages (60 books)",
+        "scope": f"First {catalogue_pages_visited} catalogue pages ({discovered_url_count} books)",
         "start_time": start_time_iso,
         "duration_seconds": duration,
         "catalogue_pages_visited": catalogue_pages_visited,
-        "total_book_urls_discovered": len(all_book_urls),
+        "total_book_urls_discovered": discovered_url_count,
+        "injected_urls_count": injected_urls_count,
+        "total_urls_requested": len(all_book_urls),
         "pages_fetched_live": total_pages_fetched,
         "cache_hits": total_cache_hits,
         "valid_records": len(valid_books),
@@ -180,3 +201,4 @@ def run_scraper(limit_catalogue_pages: int = 3, add_fake_failure: bool = True):
 
 if __name__ == "__main__":
     run_scraper()
+

@@ -32,10 +32,19 @@ def login(user: UserAuth):
 
 @app.get("/protected/profile")
 def profile(authorization: str = Header(None)):
-    # AI flaw: Poor token extraction - crashes if Authorization header is missing "Bearer " prefix
     if not authorization:
-        raise HTTPException(status_code=401, detail="No token")
-    token = authorization.split(" ")[1] # Throws IndexError if single word passed
-    # AI flaw: Trusts getUser without checking exception or expired token details
-    user = supabase.auth.get_user(token)
-    return user
+        raise HTTPException(status_code=401, detail="Invalid or missing Authorization header")
+    parts = authorization.split(" ")
+    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
+        raise HTTPException(status_code=401, detail="Invalid Bearer token format")
+    token = parts[1].strip()
+    try:
+        user_response = supabase.auth.get_user(token)
+        if not user_response or not getattr(user_response, "user", None):
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        return user_response.user
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+

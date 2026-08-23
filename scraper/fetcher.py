@@ -44,12 +44,13 @@ def fetch_html(url: str, cache_name: str, force_live: bool = False) -> Tuple[str
     if response.status_code != 200:
         raise Exception(f"HTTP fetch failed with status {response.status_code} for URL: {url}")
         
-    content = response.text
-    size = len(content.encode("utf-8"))
+    content = response.content.decode("utf-8")
+    size = len(response.content)
     
     # Save to local cache
     with open(cache_path, "w", encoding="utf-8") as f:
         f.write(content)
+
         
     print(f"FETCH: {url} -> {cache_name} ({size} bytes)")
     return content, False, size

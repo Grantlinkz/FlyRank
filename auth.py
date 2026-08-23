@@ -48,3 +48,29 @@ def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Secur
         raise
     except Exception:
         raise AuthException(401, "Invalid or expired token")
+
+try:
+    from supabase_auth.errors import AuthApiError, AuthError
+except ImportError:
+    AuthApiError = Exception
+    AuthError = Exception
+
+def logout_user(token: str) -> None:
+    """Perform request-bound logout operation using the presented bearer token."""
+    clean_token = token.strip() if token else ""
+    if not clean_token:
+        raise AuthException(401, "Access token required")
+        
+    client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    if hasattr(client.auth, "_headers"):
+        client.auth._headers["Authorization"] = f"Bearer {clean_token}"
+    try:
+        client.auth.sign_out()
+    except AuthException:
+        raise
+    except (AuthApiError, AuthError):
+        raise AuthException(401, "Invalid or expired token")
+    except Exception:
+        raise AuthException(500, "Upstream authentication service error")
+
+

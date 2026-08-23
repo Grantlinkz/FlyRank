@@ -1,94 +1,301 @@
-# FlyRank Backend Platform — Specifications & Milestones
+# 🚀 FlyRank Backend Platform & Data Ingestion Pipeline
 
-A modern, Spec-Driven RESTful Platform and Data Ingestion Pipeline built with Python 3.10+, FastAPI, Pydantic, PostgreSQL, Docker Compose, Supabase Auth, and BeautifulSoup for the FlyRank Internship Backend Track.
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688.svg)](https://fastapi.tiangolo.com/)
+[![Pydantic](https://img.shields.io/badge/Pydantic-v2-red.svg)](https://docs.pydantic.dev/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791.svg)](https://www.postgresql.org/)
+[![Docker Compose](<https://img.shields.io/badge/Docker%20Compose-v2-2496ED.svg>)](https://docs.docker.com/compose/)
+[![Supabase Auth](https://img.shields.io/badge/Supabase-Auth-3ECF8E.svg)](https://supabase.com/docs/guides/auth)
 
----
+A production-grade, spec-driven RESTful API service and resilient web data ingestion pipeline built for the **FlyRank Backend Track**.
 
-## Milestone W5: The Polite Scraper (Data Ingestion Pipeline)
-
-### 1. Target Classification
-
-- **Target Site**: Books to Scrape (`https://books.toscrape.com`)
-- **Site Purpose**: Public sandbox built specifically for web scraping practice and learning.
-- **Scope**: Exactly the first 3 catalogue pages (`page-1.html`, `page-2.html`, `page-3.html`), discovering 60 unique book detail pages.
-- **`robots.txt` Result**: `https://books.toscrape.com/robots.txt` returned HTTP `404 Not Found`.
-- **Data Collected**: `title`, `product_url`, `price_text`, `price_gbp`, `availability_text`, `rating_text`, `description`, `source_page`, `fetched_at`.
-- **Ethics Note**: *"I will not reuse this code on another site without checking its rules and terms first."*
+FlyRank evolves through spec-driven milestones: establishing RESTful CRUD services, integrating SQLite and containerized PostgreSQL database persistence with parameterized queries, enforcing secure JWT authentication using Supabase Auth as the Identity Provider, and deploying an automated, polite data scraping pipeline with request throttling, local HTML caching, Pydantic runtime schema validation, and execution metric reporting.
 
 ---
 
-### 2. Politeness Rules & Pipeline Architecture
+## 📋 Table of Contents
 
-- **Honest User-Agent**: Identifies as `FlyRankInternship-W5/1.0 (+https://github.com/Grantlinkz/FlyRank)`.
-- **Timeout**: 10-second timeout on all network requests.
-- **Throttling Delay**: Minimum `500ms` delay between consecutive live network fetches.
-- **Local Disk Caching**: HTML snapshots saved in `scraper/cache/` (git-ignored). Reruns read from local cache (`CACHE HIT`), producing 0 live network requests and identical 60 records (**Idempotency**).
-- **Non-Blocking Resilience**: Single detail page failures (404s, timeouts) are logged and skipped without halting execution.
+- [Key Features](#-key-features)
+- [System Architecture](#-system-architecture)
+- [Repository Structure](#-repository-structure)
+- [API Endpoint Reference](#-api-endpoint-reference)
+- [Environment Setup](#-environment-setup)
+- [Running the Application](#-running-the-application)
+  - [Option A: Local Development (FastAPI + SQLite / PostgreSQL)](#option-a-local-development)
+  - [Option B: Containerized Stack (Docker Compose)](#option-b-containerized-stack)
+- [Polite Data Scraping Pipeline](#-polite-data-scraping-pipeline)
+- [AI Rematch Audit (&#34;AI vs Me&#34;)](#-ai-rematch-audit-ai-vs-me)
+- [Verification &amp; Testing](#-verification--testing)
+- [License](#-license)
 
 ---
 
-### 3. Execution Command
+## ✨ Key Features
+
+### 1. 🛠️ Spec-Driven RESTful CRUD API
+
+- **Standardized Endpoints**: Full lifecycle management for `/tasks` and `/tasks/{id}` with strict HTTP status code semantics (`200 OK`, `201 Created`, `204 No Content`, `400 Bad Request`, `401 Unauthorized`, `404 Not Found`).
+- **Input Validation**: Strict request payload validation using Pydantic v2 models, rejecting empty or whitespace-only inputs.
+- **Analytics & Maintenance**: Includes `/stats` for real-time task metrics and protected `/reset` endpoint for automated table re-seeding.
+- **Interactive Documentation**: Self-documenting OpenAPI / Swagger UI at `/docs` and ReDoc at `/redoc` with integrated Bearer Token authentication testing.
+
+### 2. 🔐 Identity Management & JWT Middleware
+
+- **Identity Provider (IdP)**: Integrated with **Supabase Auth** for secure user registration (`/auth/signup`), login (`/auth/login`), and token revocation/session teardown (`/auth/logout`).
+- **Security Middleware**: Reusable FastAPI `Depends(get_current_user)` middleware extracting and validating Bearer JWTs, injecting authenticated user metadata into route execution contexts.
+- **Zero In-House Cryptography**: Password hashing, salt management, and token signatures are safely delegated to Supabase.
+
+### 3. 💾 Dual Storage Engine & Persistence Layer
+
+- **Environment-Driven Engine**: Dynamically switches between lightweight local **SQLite** (`tasks.db`) and production-grade **PostgreSQL 16**.
+- **Repository Pattern**: Strict decoupling of HTTP controllers from database operations inside [`database.py`](database.py).
+- **SQL Injection Prevention**: 100% parameterized SQL query execution (`?` for SQLite, `%s` for PostgreSQL).
+- **Auto-Initialization & Seeding**: Idempotent table creation on startup with first-run default data seeding.
+
+### 4. 🐳 Multi-Container Orchestration
+
+- **Docker Compose**: Single-command startup ([`compose.yaml`](compose.yaml)) orchestrating the FastAPI application container and a PostgreSQL 16 Alpine database container.
+- **Data Persistence**: Named Docker volume (`taskdata`) ensuring database state persists across container restarts and updates.
+
+### 5. 🕷️ Polite Data Ingestion Pipeline
+
+- **Target Site**: Sandbox Books to Scrape (`https://books.toscrape.com`).
+- **Politeness Protocol**: Custom user agent (`FlyRankInternship-W5/1.0`), 10-second request timeouts, and mandatory `500ms` request throttling delays.
+- **Local Disk Caching**: Raw HTML cached in `scraper/cache/` (git-ignored) enabling 100% idempotent offline reruns (`CACHE HIT`).
+- **Fault Resilience**: Non-blocking try-except guards gracefully logging and skipping `404` / broken pages without halting pipeline execution.
+- **Schema Validation & Reporting**: Pydantic normalization (`price_gbp`), deduplication, URL validation, and structured metric output (`run-report.json`, `books.json`, `errors.json`).
+
+---
+
+## 🏗️ System Architecture
+
+```mermaid
+graph TD
+    Client[Client / Swagger UI / cURL] -->|HTTP Requests| FastAPI[FastAPI App - main.py]
+  
+    subgraph Authentication
+        FastAPI -->|JWT Bearer Check| AuthMiddleware[Auth Middleware - auth.py]
+        AuthMiddleware -->|Verify / Issue Tokens| Supabase[Supabase Auth IdP]
+    end
+  
+    subgraph Data Access Layer
+        FastAPI -->|Call Operations| Repo[Repository Layer - database.py]
+        Repo -->|Parameterized SQL| SQLite[(SQLite - tasks.db)]
+        Repo -->|Parameterized SQL| Postgres[(PostgreSQL 16 - Docker)]
+    end
+
+    subgraph Data Ingestion Pipeline
+        Scraper[Scraper CLI - scraper/main.py] -->|Check Rules| Robots[robots.txt]
+        Scraper -->|Polite Fetch (500ms Delay)| Target[Books to Scrape]
+        Scraper -->|Save / Read HTML| Cache[(Local Disk Cache - scraper/cache/)]
+        Scraper -->|BeautifulSoup Parsing| Parser[parser.py]
+        Parser -->|Validate & Normalize| Validator[validator.py - Pydantic]
+        Validator -->|Write Output| OutputFiles[scraper/output/ - books.json & run-report.json]
+    end
+```
+
+---
+
+## 📁 Repository Structure
+
+```
+FlyRank/
+├── main.py                     # FastAPI application entry point, route definitions & OpenAPI specs
+├── database.py                 # Database repository layer (SQLite & PostgreSQL parameterized queries)
+├── auth.py                     # Supabase Auth client integration & FastAPI JWT dependency middleware
+├── requirements.txt            # Python dependencies (FastAPI, Pydantic v2, Supabase, BeautifulSoup4, etc.)
+├── Dockerfile                  # Container build instructions for FastAPI backend
+├── compose.yaml                # Docker Compose multi-container stack configuration (API + Postgres)
+├── .env                        # Local environment secrets & connection strings (git-ignored)
+├── .env.example                # Template for environment configuration
+│
+├── scraper/                    # Polite Data Ingestion Pipeline (Milestone W5)
+│   ├── main.py                 # Scraper runner, URL discovery, crawler loop & report generator
+│   ├── fetcher.py              # Network requester with User-Agent, delay, timeout & disk caching
+│   ├── parser.py               # BeautifulSoup HTML parsing functions for links and detail pages
+│   ├── validator.py            # Pydantic schema model (BookRecord), price float converter & deduplication
+│   ├── README.md               # Dedicated documentation for the scraper pipeline
+│   ├── cache/                  # Local HTML disk snapshot cache (git-ignored)
+│   └── output/                 # Ingestion pipeline outputs
+│       ├── books.json          # 60 schema-validated book records
+│       ├── errors.json         # Invalid or malformed record details
+│       └── run-report.json     # Execution timing, cache hits & politeness metrics
+│
+├── ai-version/                 # AI Rematch Audit Quarantine Environment ("AI vs Me")
+│   ├── main.py                 # AI-generated FastAPI app quarantine benchmark
+│   └── scraper/
+│       └── main.py             # AI-generated scraper quarantine benchmark
+│
+├── context/                    # Project Documentation & Architecture Specifications
+│   ├── project-overview.md     # High-level goals, core user flow & scope definitions
+│   ├── architecture.md        # Architectural layers, storage models & safety invariants
+│   ├── code-standards.md       # Coding conventions, database rules & auth guidelines
+│   ├── progress-tracker.md     # Milestone progress tracker and architectural decisions
+│   ├── ai-workflow-rules.md   # Guidelines for AI collaboration and audit protocols
+│   ├── ui-context.md          # OpenAPI / Swagger UI design and user interaction specs
+│   └── zContext.md            # Directory index and context overview
+│
+└── Tasks/                      # Curriculum Milestone Specifications & Tasks
+    ├── Tasks.md                # Task matrix, endpoints reference & W5 assignment breakdown
+    ├── W2 - Build your first CRUD API.pdf
+    ├── W3 - Connecting your CRUD to the database.pdf
+    ├── W3 - Containerize your stack(2).pdf
+    ├── W4 - Auth - Login.pdf
+    └── W5 - The polite scraper.pdf
+```
+
+---
+
+## 🔌 API Endpoint Reference
+
+All REST API endpoints are documented interactively via OpenAPI at `http://localhost:8000/docs`.
+
+| Category         | HTTP Method | Endpoint               | Auth Required    | Description                                                   | Status Codes                                       |
+| :--------------- | :---------- | :--------------------- | :--------------- | :------------------------------------------------------------ | :------------------------------------------------- |
+| **System** | `GET`     | `/`                  | None             | API root metadata and navigation endpoints                    | `200 OK`                                         |
+| **System** | `GET`     | `/health`            | None             | Service liveness probe for monitoring                         | `200 OK`                                         |
+| **Public** | `GET`     | `/public/info`       | None             | Public welcome information endpoint                           | `200 OK`                                         |
+| **Auth**   | `POST`    | `/auth/signup`       | None             | User registration via Supabase Auth                           | `201 Created`, `400 Bad Request`               |
+| **Auth**   | `POST`    | `/auth/login`        | None             | Authenticates user & returns JWT access token                 | `200 OK`, `401 Unauthorized`                   |
+| **Auth**   | `POST`    | `/auth/logout`       | `Bearer Token` | Terminates user session in Supabase Auth                      | `204 No Content`, `401 Unauthorized`           |
+| **Auth**   | `GET`     | `/protected/profile` | `Bearer Token` | Returns verified user profile & role metadata                 | `200 OK`, `401 Unauthorized`                   |
+| **Tasks**  | `GET`     | `/tasks`             | None             | List tasks with optional `done` and `search` query filters | `200 OK`                                         |
+| **Tasks**  | `GET`     | `/tasks/{id}`        | None             | Fetch a single task by numerical ID                           | `200 OK`, `404 Not Found`                      |
+| **Tasks**  | `POST`    | `/tasks`             | None             | Create a new task item (`title` required)                   | `201 Created`, `400 Bad Request`               |
+| **Tasks**  | `PUT`     | `/tasks/{id}`        | None             | Update task `title` and/or `done` status                   | `200 OK`, `400 Bad Request`, `404 Not Found` |
+| **Tasks**  | `DELETE`  | `/tasks/{id}`        | None             | Delete task by ID                                             | `204 No Content`, `404 Not Found`              |
+| **Extras** | `GET`     | `/stats`             | None             | Retrieve task count metrics (total, completed, open)          | `200 OK`                                         |
+| **Extras** | `POST`    | `/reset`             | `Bearer Token` | Re-seeds database table with initial 3 sample tasks           | `200 OK`, `401 Unauthorized`                   |
+
+---
+
+## ⚙️ Environment Setup
+
+Copy `.env.example` to `.env` in the root directory:
+
+```bash
+cp .env.example .env
+```
+
+Configure your `.env` variables:
+
+```env
+# Database URL (Default PostgreSQL for Docker Compose service 'db', or postgresql://postgres:dev@localhost:5432/tasks / sqlite:///tasks.db for local execution)
+DATABASE_URL=postgresql://postgres:dev@db:5432/tasks
+POSTGRES_PASSWORD=dev
+
+# Supabase Auth Credentials
+SUPABASE_URL=https://your-supabase-project.supabase.co
+SUPABASE_KEY=your-supabase-anon-key
+```
+
+---
+
+## 🚀 Running the Application
+
+### Option A: Local Development
+
+1. **Install Dependencies**:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. **Run FastAPI Development Server**:
+
+   ```bash
+   uvicorn main:app --reload --host 127.0.0.1 --port 8000
+   ```
+3. **Access Interactive Docs**:
+
+   - Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
+   - ReDoc: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+
+### Option B: Containerized Stack
+
+Launch both the FastAPI service and PostgreSQL 16 container with a single command:
+
+```bash
+# Build and start services in background
+docker compose up -d --build
+
+# View container logs
+docker compose logs -f api
+
+# Stop container stack
+docker compose down
+```
+
+---
+
+## 🕷️ Polite Data Scraping Pipeline
+
+The scraping module [`scraper/main.py`](scraper/main.py) automates book metadata extraction from Books to Scrape.
+
+### Execution Command
 
 ```bash
 python scraper/main.py
 ```
 
-Generated Output Artifacts:
-- `scraper/output/books.json`: Exactly 60 schema-validated book records.
-- `scraper/output/errors.json`: Any invalid/malformed records.
-- `scraper/output/run-report.json`: Pipeline execution metrics report.
+### Key Pipeline Behaviors
+
+1. **Robots.txt Check**: Verifies crawl allowance before fetching catalogue pages.
+2. **Honest User-Agent**: Sends `FlyRankInternship-W5/1.0 (+https://github.com/Grantlinkz/FlyRank)`.
+3. **Throttled Network Access**: Enforces `500ms` delay between live fetches.
+4. **Local Disk Snapshot Caching**: Stores fetched HTML in `scraper/cache/`. Second runs complete with 0 network calls (`CACHE HIT`).
+5. **Fault Survival**: Intentionally injects 1 broken URL to demonstrate that errors are logged to `errors.json` without halting execution.
+
+### Generated Artifacts
+
+- [`scraper/output/books.json`](scraper/output/books.json): 60 schema-validated book objects.
+- [`scraper/output/errors.json`](scraper/output/errors.json): Details of skipped or broken page requests.
+- [`scraper/output/run-report.json`](scraper/output/run-report.json): Metric summary including start time, duration, cache hits, and valid count.
 
 ---
 
-### 4. Verified Sample Run Report (`output/run-report.json`)
+## ⚖️ AI Rematch Audit ("AI vs Me")
 
-```json
-{
-  "target": "Books to Scrape (https://books.toscrape.com)",
-  "scope": "First 3 catalogue pages (60 books)",
-  "start_time": "2026-08-21T02:13:51.020166+00:00",
-  "duration_seconds": 28.88,
-  "catalogue_pages_visited": 3,
-  "total_book_urls_discovered": 61,
-  "pages_fetched_live": 0,
-  "cache_hits": 63,
-  "valid_records": 60,
-  "invalid_records": 0,
-  "failed_pages": 1,
-  "politeness": {
-    "user_agent": "FlyRankInternship-W5/1.0 (+https://github.com/Grantlinkz/FlyRank)",
-    "timeout_seconds": 10,
-    "delay_seconds": 0.5
-  }
-}
+In Stage 7 of Milestone W5, an AI assistant was prompted in quarantine ([`ai-version/scraper/main.py`](ai-version/scraper/main.py)) to independently build the scraping pipeline.
+
+### Audit Comparison Findings
+
+| Architectural Domain                       | Hand-Crafted Production Pipeline (`scraper/`)                                                                                 | AI Quarantine Implementation (`ai-version/scraper/`)                                                                                     |
+| :----------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------ | :----------------------------------------------------------------------------------------------------------------------------------------- |
+| **URL Resolution**                   | Uses `urllib.parse.urljoin(base, href)` ensuring accurate absolute URL formation across nested pagination paths.               | Used raw string replace (`"https://books.toscrape.com/catalogue/" + href.replace("../", "")`), which fails on deep catalogue structures. |
+| **Local Disk Caching & Idempotency** | Checks `scraper/cache/` before network fetch; reruns return `CACHE HIT` with 0 network requests.                             | Attempted live network request on every execution, ignoring caching guidelines and hammering the target server.                            |
+| **Failure Resilience**               | Handles 404/500 HTTP errors gracefully using try-except, logging failures to `errors.json` and generating `run-report.json`. | Failed to handle exceptions, resulting in uncaught `AttributeError` / `IndexError` when encountering missing DOM elements.              |
+
+---
+
+## 🔍 Verification & Testing
+
+### 1. API Health Check
+
+```bash
+curl -s http://localhost:8000/health
+# Output: {"status":"ok"}
+```
+
+### 2. Task CRUD Flow
+
+```bash
+# Create Task
+curl -X POST http://localhost:8000/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Complete FlyRank Documentation"}'
+
+# List Tasks
+curl -s http://localhost:8000/tasks
+```
+
+### 3. Run Ingestion Pipeline
+
+```bash
+python scraper/main.py
 ```
 
 ---
 
-### 5. AI Rematch ("AI vs Me") — Stage 7 Scraper Audit Report
+## 📄 License
 
-As required by Stage 7 of Assignment W5, an AI assistant was prompted in quarantine (`ai-version/scraper/main.py`) to build the same scraping pipeline:
-
-#### Full AI Prompt Used
-> *"Write a Python web scraper using BeautifulSoup and Requests to crawl the first 3 catalogue pages of Books to Scrape (`https://books.toscrape.com`), collect 60 book detail pages, extract title, price, and description, normalize price into numeric GBP float, validate records with Pydantic, cache HTML locally, enforce a 500ms delay and honest user-agent, survive 404 page errors, and generate a JSON run report."*
-
-#### Three Concrete Differences Found
-
-| Category | Hand-Crafted Code (`scraper/`) | AI-Generated Code (`ai-version/scraper/`) |
-| :--- | :--- | :--- |
-| **URL Resolution** | Used `urllib.parse.urljoin(page_url, href)` to resolve relative catalogue links safely. | Used raw string concatenation (`"https://books.toscrape.com/catalogue/" + href.replace("../", "")`), which breaks on nested paths. |
-| **Local Caching & Idempotency** | Checks `scraper/cache/` before requesting network; reruns output `CACHE HIT` with 0 live fetches. | Re-fetched all 60 pages over the network on every run, hammering the target server and ignoring caching rules. |
-| **Failure Resilience & Reporting** | Wraps detail fetches in try/except, skips 404s cleanly without halting, and outputs structured `run-report.json`. | Threw uncaught `AttributeError` or `IndexError` when a missing element or broken URL was encountered, halting execution. |
-
----
-
-## Endpoint Reference Table (API Stack)
-
-| Category | HTTP Method | Endpoint | Auth Required | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| **Public Gate** | `GET` | `/public/info` | None | Public welcome endpoint |
-| **User Auth** | `POST` | `/auth/signup` | None | User registration via Supabase Auth |
-| **User Auth** | `POST` | `/auth/login` | None | User login returning JWT access token |
-| **User Auth** | `POST` | `/auth/logout` | Bearer Token | Invalidates user session |
-| **Protected Profile**| `GET` | `/protected/profile` | Bearer Token | Returns verified user profile metadata |
-| **Task CRUD** | `GET`, `POST`, `PUT`, `DELETE` | `/tasks`, `/tasks/{id}` | None | PostgreSQL/SQLite task management |
+This repository is maintained as part of the **FlyRank AI Backend Internship Track**. All rights reserved.
