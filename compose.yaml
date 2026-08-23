@@ -10,7 +10,8 @@ services:
       SUPABASE_KEY: ${SUPABASE_KEY}
     depends_on:
       db:
-        condition: service_started
+        condition: service_healthy
+    restart: on-failure
 
   db:
     image: postgres:16-alpine
@@ -25,6 +26,11 @@ services:
       - "5432:5432"
     volumes:
       - taskdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tasks"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
 
 volumes:
   taskdata:

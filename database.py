@@ -44,9 +44,19 @@ def get_db_connection():
         conn = psycopg.connect(url, row_factory=dict_row, connect_timeout=3)
         return conn
 
-def init_db() -> None:
+def init_db(max_retries: int = 5, retry_delay: float = 2.0) -> None:
     """Initialize database table and seed initial tasks only if the table is empty."""
-    with get_db_connection() as conn:
+    import time
+    for attempt in range(1, max_retries + 1):
+        try:
+            conn = get_db_connection()
+            break
+        except Exception as e:
+            if attempt == max_retries:
+                raise e
+            time.sleep(retry_delay)
+
+    with conn:
         cursor = conn.cursor()
         if is_sqlite():
             cursor.execute("""

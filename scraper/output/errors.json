@@ -1,1 +1,16 @@
-[]
+[
+  {
+    "product_url": "https://books.toscrape.com/catalogue/tsubasa-world-chronicle-2-tsubasa-world-chronicle-2_949/index.html",
+    "raw_record": {
+      "title": "",
+      "product_url": "https://books.toscrape.com/catalogue/tsubasa-world-chronicle-2-tsubasa-world-chronicle-2_949/index.html",
+      "price_text": "",
+      "availability_text": "",
+      "rating_text": "",
+      "description": null,
+      "source_page": "https://books.toscrape.com/catalogue/page-3.html",
+      "fetched_at": "2026-08-23T11:47:54.467586+00:00"
+    },
+    "error": "Could not parse price from string: ''"
+  }
+]
