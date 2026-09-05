@@ -2,16 +2,16 @@
 
 ## Current Phase
 
-- **Completed Assignment W5 — The polite scraper (Python / Requests / BeautifulSoup / Pydantic)**
-- Built polite data ingestion pipeline in `scraper/` targeting Books to Scrape (`https://books.toscrape.com`).
-- Discovered 60 book detail URLs across 3 catalogue pages using `urljoin`.
-- Extracted 8 raw fields, normalized `price_gbp` numeric float, validated schema via Pydantic (`validator.py`).
-- Implemented disk caching (`cache/`), politeness rules (`User-Agent`, 10s timeout, 500ms delay), page failure survival, and run reporting (`output/run-report.json`).
-- Completed Stage 7 AI rematch quarantine evaluation (`ai-version/scraper/`) and documented audit report in `README.md`.
+- **Completed Assignment W6 — Put an LLM behind your API (`POST /tasks/triage`)**
+- Built single, high-leverage LLM decision step for classifying, prioritizing, and estimating inbound tasks.
+- Enforced strict closed enums (`category`, `urgency`, `estimated_effort`), non-empty bounds validation, and "when unsure" fallback rules.
+- Implemented isolated user message injection defense (JSON-encoded content), single automated repair retry, quarantine logging (`logs/quarantine.jsonl`), explicit 30s timeout, selective retry backoff (429/5xx), and operational kill switch (`LLM_ENABLED=false`).
+- Achieved **87.5% passing score** on 8-case benchmark suite (`evals/run_evals.py`) with successful self-healing repair retry on live OpenRouter calls.
+- Completed Stage 6 AI rematch audit against `ai-version/llm/` and documented findings in `README.md`.
 
 ## Current Goal
 
-- Completed W2, W3 (Database), W3 (Containerization), W4 (Auth), and W5 (Scraper). Ready for next curriculum milestone.
+- Completed W2, W3 (Database), W3 (Containerization), W4 (Auth), W5 (Scraper), and W6 (LLM). Ready for Milestone W7 (Background Jobs).
 
 ## Completed Tasks
 
@@ -20,6 +20,7 @@
 - [x] **Assignment W3 — Containerize your stack**: PostgreSQL containerization, Docker Compose orchestration (`compose.yaml`), volume mapping (`taskdata`), `.env` configuration, and Repository pattern layer separation.
 - [x] **Assignment W4 — Auth - Login & protect**: Supabase Auth IdP integration, `/auth/signup`, `/auth/login`, `/auth/logout`, protected `/protected/profile` route, JWT verification middleware, and Swagger UI Bearer Auth setup.
 - [x] **Assignment W5 — The polite scraper**: Books to Scrape ingestion pipeline, target classification, local HTML snapshot caching (`cache/`), Pydantic validation (`books.json` / `errors.json`), error resilience, and structured reporting (`run-report.json`).
+- [x] **Assignment W6 — Put an LLM behind your API (`POST /tasks/triage`)**: Pydantic schemas, versioned prompt (`prompts/task-triage-v1.md`), single-repair retry loop, quarantine logging, 30s timeout, rate-limit backoff, telemetry logging, stub mode, kill switch, benchmark runner (`evals/run_evals.py`), and AI rematch audit.
 - [x] **Context Synchronization**: Comprehensive update of `context/` documentation based on `Tasks/` directory assignment requirements and conventional commit standards.
 
 ## In Progress

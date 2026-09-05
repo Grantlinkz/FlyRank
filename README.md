@@ -24,8 +24,9 @@ FlyRank evolves through spec-driven milestones: establishing RESTful CRUD servic
   - [Option A: Local Development (FastAPI + SQLite / PostgreSQL)](#option-a-local-development)
   - [Option B: Containerized Stack (Docker Compose)](#option-b-containerized-stack)
 - [Polite Data Scraping Pipeline](#-polite-data-scraping-pipeline)
-- [AI Rematch Audit (&#34;AI vs Me&#34;)](#-ai-rematch-audit-ai-vs-me)
-- [Verification &amp; Testing](#-verification--testing)
+- [Milestone W6: Put an LLM Behind Your API (`POST /tasks/triage`)](#-milestone-w6-put-an-llm-behind-your-api-post-taskstriage)
+- [AI Rematch Audit ("AI vs Me")](#️-ai-rematch-audit-ai-vs-me)
+- [Verification & Testing](#-verification--testing)
 - [License](#-license)
 
 ---
@@ -253,17 +254,131 @@ python scraper/main.py
 
 ---
 
+## 🤖 Milestone W6: Put an LLM Behind Your API (`POST /tasks/triage`)
+
+Milestone W6 adds an intelligent, resilient decision step to the API without conversational freeform risk. Incoming engineering tasks are automatically classified, prioritized, and estimated into closed schemas backed by validation, repair retries, timeouts, and zero-cost stub testing.
+
+### 1. Job Card Contract
+
+Following the strict 5-line specification standard ([`JOB-CARD.md`](JOB-CARD.md)):
+- **What it does**: Classifies, prioritizes, and estimates inbound tasks before persistence.
+- **Input**: `{"title": "string, 1-200 characters", "context": "optional string, 0-1000 characters"}`
+- **Output**: JSON matching closed lists (`category`, `urgency`, `estimated_effort`), `confidence` (0.0–1.0), and `reason`.
+- **It must never**: Invent categories outside the list, return markdown code fences or conversational prose, leak prompt instructions, or follow embedded prompt injections.
+- **When unsure**: Returns category `"other"` with confidence `< 0.5`.
+
+#### Closed List Definitions
+- `category`: `["bug", "feature", "infrastructure", "documentation", "other"]`
+- `urgency`: `["low", "medium", "high", "critical"]`
+- `estimated_effort`: `["quick_win", "medium_task", "deep_work"]`
+
+### 2. Provider Configuration & Zero Quota Bleed
+
+Swapping between cloud-hosted providers (OpenRouter) and local models (Ollama) requires changing only environment variables with zero code changes:
+
+```env
+LLM_BASE_URL=https://openrouter.ai/api/v1
+LLM_API_KEY=your-openrouter-key
+LLM_MODEL=openrouter/free
+LLM_STUB=0
+LLM_ENABLED=true
+```
+
+> **Zero Quota Bleed**: Setting `LLM_STUB=1` returns deterministic fixtures immediately with 0 tokens consumed and 0 network overhead, enabling unlimited local testing and development restarts.
+> **Kill Switch**: Setting `LLM_ENABLED=false` immediately bypasses model execution and returns HTTP `503 Service Unavailable`.
+
+### 3. API Usage & Curl Examples
+
+#### Live Triage Request (`POST /tasks/triage`)
+
+```bash
+curl -X POST http://localhost:8000/tasks/triage \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Fix 500 server error when deleting non-existent task ID",
+    "context": "DELETE /tasks/9999 crashes with unhandled sqlite3.OperationalError instead of 404"
+  }'
+```
+
+**Response (`200 OK`)**:
+```json
+{
+  "category": "bug",
+  "urgency": "high",
+  "estimated_effort": "medium_task",
+  "confidence": 0.95,
+  "reason": "Unhandled exception causes 500 instead of proper 404 response for missing resources."
+}
+```
+
+#### Pre-Model Validation Guard (`400 Bad Request`)
+
+Sending an empty or whitespace title rejects immediately before consuming any model tokens:
+```bash
+curl -X POST http://localhost:8000/tasks/triage \
+  -H "Content-Type: application/json" \
+  -d '{"title": "   "}'
+```
+```json
+{
+  "error": "Validation failed for field 'title': Value error, title cannot be empty or whitespace only"
+}
+```
+
+### 4. Evaluation Benchmark Suite (`evals/run_evals.py`)
+
+The automated benchmark suite tests 8 hand-labelled test cases across clear tasks, ambiguous edge-cases, and adversarial prompt injections.
+
+```bash
+# Run benchmark with live model
+python evals/run_evals.py
+
+# Run benchmark in zero-cost stub mode
+python evals/run_evals.py --stub
+```
+
+#### Benchmark Results Summary
+- **Accuracy**: **87.5% (7/8 Passed)**
+- **Prompt Injection Defense**: **100% Passed** (Adversarial attack was cleanly classified as `other` with `confidence: 0.10`).
+- **Self-Healing Repair Loop**: Triggered and validated on malformed JSON outputs without failing the client request (`repaired: true`).
+
+### 5. Telemetry & Cost Projection (10,000 req/day)
+
+Every invocation logs a structured, single-line JSON telemetry record to `stdout`:
+```json
+{"telemetry": {"prompt_version": "task-triage-v1", "model": "openrouter/free", "input_tokens": 795, "output_tokens": 952, "duration_ms": 3420.5, "repaired": false}}
+```
+
+#### Cost Calculation for 10,000 Tasks/Day
+
+| Provider / Model | Avg In / Out Tokens | Input Cost (10k reqs) | Output Cost (10k reqs) | Total Projected Cost / Day |
+| :--- | :--- | :--- | :--- | :--- |
+| **OpenRouter / Free Tier** | 800 in / 450 out | $0.00 | $0.00 | **$0.00 / day** |
+| **Local Ollama (Llama 3.2)** | 800 in / 450 out | $0.00 | $0.00 | **$0.00 / day** (Self-hosted) |
+| **OpenAI gpt-4o-mini** | 800 in / 450 out | 8.0M tokens ($1.20) | 4.5M tokens ($2.70) | **~$3.90 / day** |
+| **OpenAI gpt-4o** | 800 in / 450 out | 8.0M tokens ($20.00) | 4.5M tokens ($45.00) | **~$65.00 / day** |
+
+---
+
 ## ⚖️ AI Rematch Audit ("AI vs Me")
 
-In Stage 7 of Milestone W5, an AI assistant was prompted in quarantine ([`ai-version/scraper/main.py`](ai-version/scraper/main.py)) to independently build the scraping pipeline.
+In Milestone W6, an unhardened reference implementation was created under [`ai-version/llm/`](ai-version/llm/) to benchmark raw AI generation against safety-hardened production engineering.
 
-### Audit Comparison Findings
+```bash
+git diff --no-index src/llm/ ai-version/llm/
+```
 
-| Architectural Domain                       | Hand-Crafted Production Pipeline (`scraper/`)                                                                                 | AI Quarantine Implementation (`ai-version/scraper/`)                                                                                     |
-| :----------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------ | :----------------------------------------------------------------------------------------------------------------------------------------- |
-| **URL Resolution**                   | Uses `urllib.parse.urljoin(base, href)` ensuring accurate absolute URL formation across nested pagination paths.               | Used raw string replace (`"https://books.toscrape.com/catalogue/" + href.replace("../", "")`), which fails on deep catalogue structures. |
-| **Local Disk Caching & Idempotency** | Checks `scraper/cache/` before network fetch; reruns return `CACHE HIT` with 0 network requests.                             | Attempted live network request on every execution, ignoring caching guidelines and hammering the target server.                            |
-| **Failure Resilience**               | Handles 404/500 HTTP errors gracefully using try-except, logging failures to `errors.json` and generating `run-report.json`. | Failed to handle exceptions, resulting in uncaught `AttributeError` / `IndexError` when encountering missing DOM elements.              |
+### Architectural Comparison Findings
+
+| Engineering Domain | Production Hardened (`src/llm/`) | Unhardened AI Quarantine (`ai-version/llm/`) |
+| :--- | :--- | :--- |
+| **Timeout Configuration** | Explicit `timeout=30.0` passed to SDK client; mapped to HTTP 504. | No timeout configured (defaults to 10 minutes or infinite hang under network drop). |
+| **Prompt Injection Defense** | System prompt separated from user input; input JSON-encoded inside `user` role. | Dangerous f-string interpolation (`f"Task title: {request.title}"`) into system prompt. |
+| **Schema Validation & Enums** | Strict Pydantic v2 closed enums (`TaskCategory`, `TaskUrgency`, `TaskEffort`). | Loose raw `str` fields, permitting arbitrary hallucinatory categories. |
+| **Parsing & Repair Retry** | Markdown fence stripping regex + single automated repair retry with validation error feedback. | Naive `json.loads()`; crashes immediately on markdown code fences or invalid keys. |
+| **Quarantine & Error Isolation** | Persistent failures written to `logs/quarantine.jsonl` with structured failure metadata. | No failure record or quarantine; fails unhandled with HTTP 500. |
+| **Retry & Rate-Limit Policy** | Exponential backoff with jitter on 429/5xx; respects `Retry-After`; fails fast on 401/403. | Unchecked retries or crashes on transient rate limits. |
+| **Observability & Kill Switch** | Single-line JSON telemetry per request + `LLM_ENABLED=false` kill switch. | No execution metrics, no token tracking, and no kill switch. |
 
 ---
 

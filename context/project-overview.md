@@ -45,6 +45,14 @@ FlyRank is a modular backend platform and developer internship track focused on 
 - Non-blocking failure handling: 5xx retry logic, logging and skipping 404/broken pages without halting execution.
 - Execution reporting (`output/run-report.json`) tracking timing, cache hits, valid/invalid records, and errors.
 
+### 5. Deterministic LLM Task Triage (`POST /tasks/triage`)
+- Production-grade LLM decision step for classification, urgency assessment, and effort estimation.
+- Closed enum output guarantees with strict negative constraints (no Markdown code fences or free text).
+- Untrusted user input isolation via JSON-encoded user message payloads to prevent prompt injection.
+- Single repair retry loop with error feedback on validation/JSON decode failure.
+- Quarantine failure logging (`logs/quarantine.jsonl`) returning HTTP 422 Unprocessable Entity.
+- Zero-cost stub mode (`LLM_STUB=1`), operational kill switch (`LLM_ENABLED=false`), and 30s client timeout.
+
 ## Scope
 
 ### In Scope
@@ -53,10 +61,12 @@ FlyRank is a modular backend platform and developer internship track focused on 
 - Dockerfile and Docker Compose setup for local environment parity.
 - Supabase Auth SDK integration and JWT middleware.
 - Books to Scrape ingestion pipeline with local file caching and JSON outputs (`output/books.json`).
+- LLM task triage decision step backed by OpenAI SDK, versioned prompts, and evaluation harnesses.
 
 ### Out of Scope
 - Custom password hashing or rolling custom cryptography.
 - Unthrottled scraping or bypassing website paywalls/logins.
+- Free-form open-ended chatbot conversational systems.
 - Complex frontend web applications (backend focus).
 - Direct mutation of third-party DOMs or external database schemas.
 
@@ -66,3 +76,4 @@ FlyRank is a modular backend platform and developer internship track focused on 
 2. **Verified Persistence**: Data survives full server and container restarts (`docker compose down && docker compose up`).
 3. **Auth Enforcement**: Protected routes successfully reject missing/tampered tokens with `401 Unauthorized` and permit valid tokens with `200 OK`.
 4. **Pipeline Resilience**: Scraping pipeline processes 60 unique book records idempotently, handles deliberate 404 failures gracefully, and generates valid `output/run-report.json`.
+5. **LLM Contract & Safety**: Triage endpoint rejects invalid/empty inputs with `400 Bad Request`, achieves >=80% on evaluation benchmark, defends against prompt injections, and automatically recovers via repair retry.

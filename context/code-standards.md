@@ -55,6 +55,15 @@
 - **Validation & Output**: Validate extracted fields against a Zod/Pydantic schema before writing to `output/books.json`. Direct failing records to `errors.json` with reason details.
 - **Failure Resilience**: Log and skip broken individual detail pages (404s, parser errors) without throwing an uncaught exception that halts the entire job. End runs with a summary report (`output/run-report.json`).
 
+## LLM Integration & Prompt Engineering Standards
+
+- **Untrusted Input Isolation**: Never concatenate raw user input into system instructions. User input must always be passed inside the `user` message role as a JSON payload to prevent prompt injection.
+- **Closed Output Contracts**: Every categorical field returned by an LLM decision endpoint must belong to a predefined enum list (`TaskCategory`, `TaskUrgency`, `TaskEffort`). Freeform categories are strictly forbidden.
+- **Pre-Model Input Validation**: Validate inbound fields (e.g. non-empty string, character limits) before invoking model logic; return `400 Bad Request` to avoid consuming API quota on malformed requests.
+- **Explicit Timeouts & Retry Policy**: Client requests must have an explicit timeout (e.g. 30s). Retries with exponential backoff and jitter are permitted only for transient errors (429, 5xx); client errors (400, 401, 403) must fail fast.
+- **Single Repair Retry & Quarantine**: If initial model output fails JSON or Pydantic validation, trigger exactly one repair request containing the original prompt, malformed output, and validation error. Persistent failures must be appended to `logs/quarantine.jsonl` and return HTTP `422 Unprocessable Entity`.
+- **Zero Quota Bleed & Observability**: Support `LLM_STUB=1` returning fixture responses for offline development and testing. Emit single-line structured JSON telemetry logs (`prompt_version`, `model`, tokens, `duration_ms`, `repaired`) to `stdout`.
+
 ## Git Commit Conventions
 
 All Git commits across the platform must adhere to the Conventional Commits standard:
@@ -73,6 +82,11 @@ Use the `-m` git flag for concise or multi-line commit messages (e.g., `git comm
 - `src/` — Server entry point, route definitions, and route handlers.
 - `src/repository/` — Database access layer & connection initialization.
 - `src/middleware/` — Auth token verification middleware.
+- `src/llm/` — LLM client provider, schema definitions, repair retry loop, and telemetry.
+- `prompts/` — Version-controlled prompt engineering specifications (`task-triage-v1.md`).
+- `evals/` — Benchmark evaluation test cases (`cases.json`) and evaluation runner (`run_evals.py`).
+- `logs/` — Runtime failure logs (`quarantine.jsonl`).
 - `scraper/` — Scraper pipeline scripts (`fetcher`, `parser`, `validator`).
 - `scraper/cache/` — Saved raw HTML page snapshots.
 - `scraper/output/` — Output data files (`books.json`, `errors.json`, `run-report.json`).
+- `ai-version/` — Quarantined reference implementations for AI rematch evaluations.

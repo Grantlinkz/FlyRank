@@ -33,6 +33,17 @@ All server responses must follow a strict, predictable JSON shape.
   ]
   ```
 
+- **Task Triage Representation (`POST /tasks/triage`)**:
+  ```json
+  {
+    "category": "bug",
+    "urgency": "high",
+    "estimated_effort": "medium_task",
+    "confidence": 0.95,
+    "reason": "Direct failure in resource deletion degrades system reliability."
+  }
+  ```
+
 ### Error Response Contract
 
 All errors must return a JSON object containing a top-level `error` key with a human-readable explanation:
@@ -44,14 +55,18 @@ All errors must return a JSON object containing a top-level `error` key with a h
 
 | Status Code | Meaning | Usage Context |
 | ----------- | ------- | ------------- |
-| `200 OK` | Request succeeded | `GET` requests, `PUT` updates, `POST /auth/login` |
+| `200 OK` | Request succeeded | `GET` requests, `PUT` updates, `POST /auth/login`, `POST /tasks/triage` |
 | `201 Created` | Resource created | `POST /tasks`, `POST /auth/signup` |
 | `204 No Content` | Succeeded with empty body | `DELETE /tasks/:id`, `POST /auth/logout` |
-| `400 Bad Request` | Client payload validation failed | Missing or empty `title`, missing credentials |
+| `400 Bad Request` | Client payload validation failed | Missing or empty `title`, missing credentials, bounds check |
 | `401 Unauthorized` | Authentication failed or missing | Missing, malformed, or expired JWT Bearer token |
 | `403 Forbidden` | Authenticated user unauthorized | Authenticated user lacks permission for target resource |
 | `404 Not Found` | Resource or endpoint missing | Requesting non-existent task ID or unknown route |
-| `429 Too Many Requests` | Rate limit exceeded | Excessive login attempts or rapid requests |
+| `422 Unprocessable` | Unrepairable model schema failure | Model output failed validation after repair retry (quarantined) |
+| `429 Too Many Requests` | Rate limit exceeded | Excessive requests or provider rate limit |
+| `502 Bad Gateway` | Upstream provider error | LLM provider failure or network disruption |
+| `503 Service Unavailable` | Service feature disabled | LLM triage disabled via `LLM_ENABLED=false` kill switch |
+| `504 Gateway Timeout` | Request timeout exceeded | LLM call exceeded explicit 30s timeout |
 
 ## Swagger UI Configuration
 

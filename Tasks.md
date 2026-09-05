@@ -13,7 +13,8 @@ This document tracks all tasks, curriculum milestones, specifications, and endpo
 | **W3 (Docker)**| Multi-Container Orchestration | Docker, Docker Compose (`compose.yaml`), Volume Mapping | ✅ Completed |
 | **W4** | Identity Provider & JWT Security | Supabase Auth, Bearer Token Middleware, FastAPI Security | ✅ Completed |
 | **W5** | Polite Data Scraping Pipeline | Requests, BeautifulSoup4, Local Disk Cache, Pydantic Schema | ✅ Completed |
-| **W6 / Future**| Advanced Data Pipelines & API Enhancements | Rate limiting, async crawling, database ingestion integration | ⏳ Backlog |
+| **W6** | Put an LLM Behind Your API (`/tasks/triage`) | OpenAI SDK, OpenRouter/Ollama, Pydantic v2, Prompt Engineering | ✅ Completed |
+| **W7 / Future**| Advanced Data Pipelines & Background Jobs | Celery / Redis / RQ / Async background task processing | ⏳ Backlog |
 
 ---
 
@@ -127,6 +128,7 @@ This document tracks all tasks, curriculum milestones, specifications, and endpo
 | **Tasks** | `POST` | `/tasks` | None | `{"title": "..."}` | `201 Created` (Task object) | `400 Bad Request` |
 | **Tasks** | `PUT` | `/tasks/{id}` | None | `{"title": "...", "done": true}` | `200 OK` (Task object) | `400 Bad Request`, `404 Not Found` |
 | **Tasks** | `DELETE` | `/tasks/{id}` | None | Path param: `id` (int) | `204 No Content` | `404 Not Found` |
+| **Tasks / LLM** | `POST` | `/tasks/triage` | None | `{"title": "...", "context": "..."}` | `200 OK` (`TaskTriageResponse`) | `400 Bad Request`, `422 Unprocessable`, `503 Unavailable`, `504 Timeout` |
 | **Extras** | `GET` | `/stats` | None | None | `200 OK` (Counts object) | N/A |
 | **Extras** | `POST` | `/reset` | Bearer Token | Header: `Authorization: Bearer <jwt>` | `200 OK` (Reset Tasks array) | `401 Unauthorized` |
 
