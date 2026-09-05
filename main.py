@@ -8,6 +8,16 @@ from pydantic import BaseModel, Field
 import database
 import auth
 from auth import get_current_user, AuthException
+from fastapi.exceptions import RequestValidationError
+from src.llm import (
+    triage_task,
+    TaskTriageRequest,
+    TaskTriageResponse,
+    LLMTimeoutException,
+    LLMDisabledException,
+    LLMQuarantineException,
+    LLMClientException,
+)
 
 
 @asynccontextmanager
@@ -31,6 +41,47 @@ async def auth_exception_handler(request: Request, exc: AuthException):
     return JSONResponse(
         status_code=exc.status_code,
         content={"error": exc.message}
+    )
+
+# Exception Handlers for LLM Service
+@app.exception_handler(LLMTimeoutException)
+async def llm_timeout_handler(request: Request, exc: LLMTimeoutException):
+    return JSONResponse(
+        status_code=504,
+        content={"error": "Gateway Timeout: LLM provider did not respond in time", "detail": str(exc)}
+    )
+
+@app.exception_handler(LLMDisabledException)
+async def llm_disabled_handler(request: Request, exc: LLMDisabledException):
+    return JSONResponse(
+        status_code=503,
+        content={"error": "Service Unavailable: LLM integration is disabled", "detail": str(exc)}
+    )
+
+@app.exception_handler(LLMQuarantineException)
+async def llm_quarantine_handler(request: Request, exc: LLMQuarantineException):
+    return JSONResponse(
+        status_code=422,
+        content={"error": "Unprocessable Entity: Model output could not be validated after repair", "details": exc.details}
+    )
+
+@app.exception_handler(LLMClientException)
+async def llm_client_handler(request: Request, exc: LLMClientException):
+    return JSONResponse(
+        status_code=502,
+        content={"error": f"Bad Gateway: LLM provider returned error {exc.status_code}", "detail": exc.message}
+    )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    from fastapi.encoders import jsonable_encoder
+    errors = exc.errors()
+    msg = errors[0].get("msg", "Invalid request body") if errors else "Invalid request body"
+    loc = errors[0].get("loc", []) if errors else []
+    field = loc[-1] if loc else "body"
+    return JSONResponse(
+        status_code=400,
+        content={"error": f"Validation failed for field '{field}': {msg}", "details": jsonable_encoder(errors)}
     )
 
 # --- Pydantic Models ---
@@ -73,7 +124,7 @@ def get_root():
     return {
         "name": "Task API",
         "version": "1.0",
-        "endpoints": ["/tasks", "/auth/signup", "/auth/login", "/protected/profile"]
+        "endpoints": ["/tasks", "/tasks/triage", "/auth/signup", "/auth/login", "/protected/profile"]
     }
 
 @app.get(
@@ -333,3 +384,18 @@ def delete_task(id: int):
         )
         
     return Response(status_code=204)
+
+@app.post(
+    "/tasks/triage",
+    response_model=TaskTriageResponse,
+    summary="Triage Task via LLM",
+    description="Classifies, prioritizes, and estimates inbound tasks using LLM or deterministic stub mode.",
+    tags=["Tasks"]
+)
+def triage_task_endpoint(payload: TaskTriageRequest):
+    """
+    Triage an inbound task.
+    Classifies into closed category enums, assesses urgency, estimated effort, and confidence.
+    """
+    response, _ = triage_task(payload)
+    return response
