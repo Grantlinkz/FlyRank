@@ -120,16 +120,16 @@ This document tracks all tasks, curriculum milestones, specifications, and endpo
 
 ### Milestone W7b: PDF Report Generator (Assignment A8)
 
-- [ ] **Task 8.1**: Setup Playwright headless Chromium environment (`playwright install chromium`).
-- [ ] **Task 8.2**: Create reporting SQLite database `report.db` and write idempotent seed script (reusing `books.json` or orders dataset).
-- [ ] **Task 8.3**: Write SQL aggregation query module extracting 4 key business metrics (`COUNT`, `SUM`, `AVG`, `GROUP BY`).
-- [ ] **Task 8.4**: Build HTML template with print CSS rules (`tr { break-inside: avoid; }`, repeating `<thead>`) and render $\ge 2$ page PDF via Playwright.
-- [ ] **Task 8.5**: Implement "store and link" API endpoints:
+- [x] **Task 8.1**: Setup Playwright headless Chromium environment (`playwright install chromium`).
+- [x] **Task 8.2**: Create reporting SQLite database `report.db` and write idempotent seed script (reusing `books.json` or orders dataset).
+- [x] **Task 8.3**: Write SQL aggregation query module extracting 4 key business metrics (`COUNT`, `SUM`, `AVG`, `GROUP BY`).
+- [x] **Task 8.4**: Build HTML template with print CSS rules (`tr { break-inside: avoid; }`, repeating `<thead>`) and render $\ge 2$ page PDF via Playwright.
+- [x] **Task 8.5**: Implement "store and link" API endpoints:
   - `POST /reports` - Executes pipeline, saves `reports/<id>.pdf` and DB record, returns `201 Created` + file link.
   - `GET /reports/{id}` - Returns report metadata and download link.
   - `GET /reports/{id}/file` - Streams binary PDF file via `FileResponse`.
-- [ ] **Task 8.6**: Implement double-click idempotency: same-day duplicate requests return `200 OK` with existing report ID (no duplicate file created); support `{ "force": true }` bypass.
-- [ ] **Task 8.7**: Execute AI Rematch Audit in `ai-version/reports/` auditing page-break CSS, file-serving patterns, and SQL aggregations.
+- [x] **Task 8.6**: Implement double-click idempotency: same-day duplicate requests return `200 OK` with existing report ID (no duplicate file created); support `{ "force": true }` bypass.
+- [x] **Task 8.7**: Execute AI Rematch Audit in `ai-version/reports/` auditing page-break CSS, file-serving patterns, and SQL aggregations.
 
 ---
 

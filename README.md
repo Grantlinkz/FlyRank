@@ -26,7 +26,8 @@ FlyRank evolves through spec-driven milestones: establishing RESTful CRUD servic
 - [Polite Data Scraping Pipeline](#-polite-data-scraping-pipeline)
 - [Milestone W6: Put an LLM Behind Your API (`POST /tasks/triage`)](#-milestone-w6-put-an-llm-behind-your-api-post-taskstriage)
 - [Milestone W7: Your First Background Job & Cron Schedules](#-milestone-w7-your-first-background-job--cron-schedules)
-- [AI Rematch Audit: LLM Triage vs Background Jobs](#️-ai-rematch-audit)
+- [Milestone W7b: PDF Report Generator (Assignment A8)](#-milestone-w7b-pdf-report-generator-assignment-a8)
+- [AI Rematch Audit: LLM Triage vs Background Jobs vs PDF Reports](#️-ai-rematch-audit)
 - [Verification & Testing](#-verification--testing)
 - [License](#-license)
 
@@ -500,6 +501,139 @@ Include:
 
 #### Rematch Evolution Note
 Upon updating the prompt to explicitly enforce `400 Bad Request` on whitespace input and explicit `retries=2` with on-failure recording, the AI implemented custom string validators, proving that AI code quality is directly bounded by specification precision.
+
+---
+
+## 📊 Milestone W7b: PDF Report Generator (Assignment A8)
+
+Milestone W7b implements the classic enterprise **Store and Link** document reporting pipeline:
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│   1. QUERY   │ ──> │  2. RENDER   │ ──> │   3. STORE   │ ──> │   4. SERVE   │
+│ SQL Aggregates│     │HTML+Playwright│    │Save to Disk  │     │Serve by Link │
+└──────────────┘     └──────────────┘     └──────────────┘     └──────────────┘
+```
+
+Rather than passing heavy binary blobs in JSON requests, the server aggregates data via pure SQL, renders a styled document through headless Chromium (`Playwright`), saves the produced artifact to disk (`reports/<id>.pdf`), registers metadata in SQLite (`report.db`), and hands out an address link (`/reports/<id>/file`).
+
+### 1. Dataset Selection: Option B (The Bookstore)
+This implementation reuses the **60 validated book records** collected during **Milestone W5** from [books.toscrape.com](https://books.toscrape.com) stored in [`scraper/output/books.json`](scraper/output/books.json).
+- **Idempotent Seeding**: The seeding script (`src/reports/seed.py`) executes `DELETE FROM books` before batch-inserting parameterized tuples. Running the seed command multiple times always guarantees exactly 60 records remain.
+- **Rating Normalization**: Text ratings (`"One"`, `"Two"`, `"Three"`, `"Four"`, `"Five"`) are mapped to clean 1–5 integers.
+
+### 2. How to Run
+
+```bash
+# Step 1: Install Playwright & Headless Chromium
+pip install playwright
+python -m playwright install chromium
+
+# Step 2: Seed the database idempotently
+python -m src.reports.seed
+# Output: Seeding complete. Total books in report.db: 60
+
+# Step 3: Launch FastAPI server
+uvicorn main:app --reload --port 8000
+```
+
+### 3. Pure SQL Aggregation Queries
+All four business metrics are calculated directly inside SQLite queries in [`src/reports/queries.py`](src/reports/queries.py) rather than in application memory:
+
+```sql
+-- 1. Total Catalog Count
+SELECT COUNT(*) FROM books;
+
+-- 2. Average Unit Price & Total Inventory Valuation
+SELECT ROUND(AVG(price), 2), ROUND(SUM(price), 2), ROUND(MIN(price), 2), ROUND(MAX(price), 2) FROM books;
+
+-- 3. Top 5 Most Expensive Titles
+SELECT title, price, rating, url FROM books ORDER BY price DESC LIMIT 5;
+
+-- 4. Rating Distribution Breakdown
+SELECT rating, COUNT(*) as count FROM books GROUP BY rating ORDER BY rating DESC;
+
+-- 5. Full Inventory Catalog (Multi-Page Print Document)
+SELECT id, title, price, rating, url FROM books ORDER BY id ASC;
+```
+
+### 4. Print CSS Defenses Against Classic Traps
+To ensure production-grade document quality across multiple pages, [`src/reports/template.py`](src/reports/template.py) implements the essential print CSS rules:
+- **No Sliced Table Rows**: `tr { break-inside: avoid; page-break-inside: avoid; }` forces complete table rows onto subsequent pages rather than slicing them horizontally across page breaks.
+- **Repeating Column Headers**: `thead { display: table-header-group; }` instructs Chromium to repeat the column header row at the top of every generated page.
+- **Standard A4 Geometry**: `@page { size: A4; margin: 16mm 14mm 16mm 14mm; }` with exact background printing enabled (`-webkit-print-color-adjust: exact !important`).
+
+### 5. Terminal Execution Proof (POST → Download → Idempotency)
+
+```bash
+# 1. Generate Report (Store and Link, creates reports/1.pdf)
+curl -i -X POST http://localhost:8000/reports
+# HTTP/1.1 201 Created
+# Content-Type: application/json
+# {"id": 1, "file": "/reports/1/file"}
+
+# 2. Download the binary PDF file directly by link
+curl -o my-report.pdf http://localhost:8000/reports/1/file
+# Result: Downloads valid 3-page A4 PDF (size ~133 KB, magic bytes %PDF-)
+
+# 3. Double-Click Idempotency: Immediate second POST returns existing report without re-rendering
+curl -i -X POST http://localhost:8000/reports
+# HTTP/1.1 200 OK
+# Content-Type: application/json
+# {"id": 1, "file": "/reports/1/file"}
+# reports/ directory gains zero duplicate files
+
+# 4. Force Regeneration: Bypass daily idempotency cache
+curl -i -X POST -H "Content-Type: application/json" -d '{"force": true}' http://localhost:8000/reports
+# HTTP/1.1 201 Created
+# Content-Type: application/json
+# {"id": 2, "file": "/reports/2/file"}
+```
+
+### 6. Architectural Reflection Questions
+
+> **Stage 4 Reflection: At what point would you move this work out of the request?**  
+> We would move this work out of the request into an asynchronous background job when generation latency exceeds acceptable interactive thresholds (>2–3 seconds), when reports process thousands of rows requiring significant compute or memory, or when high user concurrency threatens to exhaust web worker pools by blocking server threads during headless browser printing.
+
+> **Stage 5 Reflection: What your check protects against, and one real-world example where a missing check like this costs money.**  
+> This idempotency check protects server resources from redundant headless browser rendering, disk exhaustion, and CPU spikes triggered by impatient users double-clicking the "Generate Report" button. A critical real-world example where a missing check costs money is in automated invoice or statement generation paired with an email dispatch trigger (the workshop's "never email a customer twice" rule) or transactional billing where double-clicking a "Generate & Purchase Report" button could double-bill a customer's credit card.
+
+---
+
+### 7. 🥊 Bonus Stage: The AI Rematch (PDF Report Generator)
+
+We prompted an AI assistant to implement the entire PDF report pipeline in quarantine ([`ai-version/reports/main.py`](ai-version/reports/main.py)) from the specification prompt below and conducted a comparative audit.
+
+#### The AI Prompt Used
+```text
+Build a PDF report generation feature in Python using FastAPI, SQLite, and Playwright.
+The dataset is in report.db (table books: id, title, price, rating, url).
+1. Provide an idempotent seed script that loads books from a JSON file into report.db.
+2. Write SQL aggregations calculating: total books, average price, top 5 most expensive books,
+   and rating breakdown.
+3. Render an HTML page displaying these metrics and a full table of all books.
+   Print to A4 PDF using Playwright headless Chromium.
+4. Implement endpoints:
+   - POST /reports: generates PDF, saves to reports/<id>.pdf, records in reports table,
+     returns HTTP 201 with {"id": ..., "file": "/reports/<id>/file"}.
+   - GET /reports/{id}: returns report metadata.
+   - GET /reports/{id}/file: serves binary PDF via FileResponse.
+5. Idempotency: If a report was already generated today, return the existing report with 200 OK.
+   Accept {"force": true} to force fresh generation.
+```
+
+#### Side-by-Side Audit (`git diff --no-index src/reports ai-version/reports`)
+
+| Feature & Failure Mode | Hand-Crafted Production (`src/reports/` + `main.py`) | Quarantined AI (`ai-version/reports/main.py`) |
+| :--- | :--- | :--- |
+| **Page-Break Traps** | Defensive print CSS with `tr { break-inside: avoid; }` and repeating table headers (`thead { display: table-header-group; }`). Multi-page catalog renders cleanly without sliced rows. | Omitted page-break CSS entirely. Relied on default browser flow, causing table rows to slice horizontally across page breaks and subsequent pages to lack headers. |
+| **Visual Styling & KPI Cards** | Rich executive dashboard layout with metric cards, rating distribution bar visuals, typography hierarchy, and star badges. | Bare-bones unstyled HTML with default table borders and raw text dumps. |
+| **Database Atomicity & Paths** | Multi-table schema management with explicit foreign keys, parameterized queries, and safe path resolution using `Path.resolve()`. | Minimal single-file script using hardcoded relative paths; missing file existence checks before returning existing records. |
+| **API Error Contract Shape** | Consistent JSON error envelopes `{"error": "..."}` matching project-wide REST conventions. | Defaulted to FastAPI `HTTPException(404, detail="...")` yielding mismatched `{"detail": "..."}` responses. |
+
+#### Concrete Takeaways
+1. **What the AI did better**: The AI wrote concise, readable async Playwright context manager code with very little boilerplate.
+2. **What it got wrong**: The AI completely missed the print CSS page-break trap — it did not include `break-inside: avoid` on `<tr>` or repeat headers via `<thead>`, which is the #1 failure mode in real-world document printing.
+3. **What the prompt forgot to specify**: The prompt did not specify visual design aesthetics or error response envelope shapes, leading the AI to pick plain table formatting and default exception handlers.
 
 ---
 
