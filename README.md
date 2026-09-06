@@ -25,7 +25,8 @@ FlyRank evolves through spec-driven milestones: establishing RESTful CRUD servic
   - [Option B: Containerized Stack (Docker Compose)](#option-b-containerized-stack)
 - [Polite Data Scraping Pipeline](#-polite-data-scraping-pipeline)
 - [Milestone W6: Put an LLM Behind Your API (`POST /tasks/triage`)](#-milestone-w6-put-an-llm-behind-your-api-post-taskstriage)
-- [AI Rematch Audit ("AI vs Me")](#️-ai-rematch-audit-ai-vs-me)
+- [Milestone W7: Your First Background Job & Cron Schedules](#-milestone-w7-your-first-background-job--cron-schedules)
+- [AI Rematch Audit: LLM Triage vs Background Jobs](#️-ai-rematch-audit)
 - [Verification & Testing](#-verification--testing)
 - [License](#-license)
 
@@ -379,6 +380,126 @@ git diff --no-index src/llm/ ai-version/llm/
 | **Quarantine & Error Isolation** | Persistent failures written to `logs/quarantine.jsonl` with structured failure metadata. | No failure record or quarantine; fails unhandled with HTTP 500. |
 | **Retry & Rate-Limit Policy** | Exponential backoff with jitter on 429/5xx; respects `Retry-After`; fails fast on 401/403. | Unchecked retries or crashes on transient rate limits. |
 | **Observability & Kill Switch** | Single-line JSON telemetry per request + `LLM_ENABLED=false` kill switch. | No execution metrics, no token tracking, and no kill switch. |
+
+---
+
+## ⚡ Milestone W7: Your First Background Job & Cron Schedules
+
+Offload long-running operations (>1s) from standard HTTP request-response cycles into durable background jobs and scheduled clock-triggered tasks using the **Inngest Python SDK** and **Inngest Dev Server**.
+
+### 1. Dual Startup Commands
+
+Running the full background jobs stack requires two terminal processes:
+
+```bash
+# Terminal 1: Start FastAPI Application Server (Port 8000)
+uvicorn main:app --reload --port 8000
+
+# Terminal 2: Start Inngest Local Dev Server & Visual Dashboard (Port 8288)
+npx inngest-cli@latest dev -u http://localhost:8000/api/inngest
+```
+
+- **API Documentation**: `http://localhost:8000/docs`
+- **Inngest Dashboard**: `http://localhost:8288`
+
+---
+
+### 2. Endpoints & Background Functions Reference Table
+
+| Execution Category | Route / Trigger | Handler / ID | Status / Behavior | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **Request / Response** | `GET /health` | `get_health()` | `200 OK` | Instant health probe returning `{"status": "ok"}`. |
+| **Fast Door (Accept)** | `POST /reports` | `create_report_endpoint()` | `202 Accepted` (<100ms) | Validates input (`400` on empty/whitespace), saves state (`pending`), dispatches event `report/requested`. |
+| **Status Polling** | `GET /reports/{id}` | `get_report_endpoint()` | `200 OK` / `404 Not Found` | Status endpoint returning `pending` first, then `done` with report result payload (eventual consistency). |
+| **Control Panel** | `GET /reports` | `list_reports()` | `200 OK` | Returns full list of tracked reports and their current statuses. |
+| **Inngest Serve Mount**| `/api/inngest` | `inngest.fast_api.serve` | `200 OK` (GET/POST/PUT) | Protocol handshake and execution endpoint connecting FastAPI to Inngest Dev Server. |
+| **Durable Function** | Event `test/hello` | `say-hello` | Step Sleep (5s) | Durable test workflow sleeping 5 seconds and returning greeting. |
+| **Durable Workflow** | Event `report/requested` | `make-report` | Step Sleep (8s) + Step Run | Simulates slow compute (8s), injects error on topic `"fail"`, updates status to `done`, retries with backoff up to 2 times. |
+| **Scheduled Cron** | Cron `* * * * *` | `heartbeat` | Schedule-Driven | Runs every minute on the clock alone without HTTP trigger; logs pending, done, failed counts to stdout. |
+
+---
+
+### 3. Pasted Terminal Proof: Fast 202 Door & Status Polling
+
+Below is the verified terminal execution demonstrating immediate `<100ms` acceptance followed by status polling:
+
+```bash
+# 1. Trigger asynchronous report (Accept fast door)
+$ time curl -i -X POST http://localhost:8000/reports \
+    -H "Content-Type: application/json" \
+    -d '{"topic": "cats"}'
+
+HTTP/1.1 202 Accepted
+content-length: 44
+content-type: application/json
+
+{"id":"rep_d7880e89","status":"pending"}
+real    0m0.048s
+user    0m0.012s
+sys     0m0.016s
+
+# 2. Poll immediately (Expect pending)
+$ curl -i http://localhost:8000/reports/rep_d7880e89
+
+HTTP/1.1 200 OK
+content-type: application/json
+
+{"id":"rep_d7880e89","topic":"cats","status":"pending","result":null,"created_at":"2026-09-06T00:20:50.123456+00:00","attempts":0,"error":null}
+
+# 3. Poll after background sleep & build steps complete (~10 seconds later)
+$ curl -i http://localhost:8000/reports/rep_d7880e89
+
+HTTP/1.1 200 OK
+content-type: application/json
+
+{"id":"rep_d7880e89","topic":"cats","status":"done","result":"Report on 'cats' generated successfully.","created_at":"2026-09-06T00:20:50.123456+00:00","attempts":1,"error":null}
+```
+
+---
+
+### 4. Core Conceptual Explanations
+
+#### Stage 3: Retrying vs. Input Validation Gatekeeper
+> **"A wrong input must be rejected at the door with `400 Bad Request` without creating background work; only a wrong moment (a transient network hiccup or temporary service outage) deserves an automated retry with exponential backoff."**
+
+- **Reject at the door (`400 Bad Request`)**: Missing or empty parameters (e.g. `POST /reports` with `{}`) will never succeed no matter how many times a worker retries. Retrying bad data wastes worker CPU, clogs queues, and corrupts databases.
+- **Retry with backoff (`retries=2`)**: A transient downstream failure (e.g. database connection pool saturation, external AI API hiccup, network timeout) is temporary. Backoff introduces progressive delay (e.g. 5s, 30s, 2m) to allow dependent services time to recover.
+
+#### Stage 4: Cron Expressions Decoded
+- **Run every day at 08:00 UTC**: `0 8 * * *`  
+  *(Minute 0, Hour 8, Every day-of-month, Every month, Every day-of-week)*
+- **Run every Sunday at 22:00 UTC**: `0 22 * * 0`  
+  *(Minute 0, Hour 22, Every day-of-month, Every month, Day 0 = Sunday)*
+
+---
+
+### 5. 🤖 AI Rematch Audit: Background Jobs ("AI vs Me")
+
+In Stage 6, an independent AI assistant was prompted from memory in quarantine (`ai-version/jobs/`) to build the background jobs system.
+
+#### The AI Prompt Used
+```text
+Build a FastAPI background job system using Inngest with an in-memory dictionary for reports.
+Include:
+1. POST /reports: Fast door returning HTTP 202 in <1s with unique report id and pending status, dispatching report/requested event.
+2. Strict validation: if topic is missing or whitespace, return 400 Bad Request and send zero events.
+3. Inngest function make-report: 8-second sleep step, build step updating report to done. If topic is 'fail', raise an error with retries=2.
+4. Status endpoint GET /reports/:id returning pending first, then done with result. Return 404 for unknown id.
+5. Inngest cron function heartbeat running on '* * * * *' logging counts of pending, done, and failed reports.
+```
+
+#### Side-by-Side Architectural Audit (`git diff --no-index src/jobs ai-version/jobs`)
+
+| Feature & Failure Mode | Hand-Crafted Production (`src/jobs/` + `main.py`) | Quarantined AI (`ai-version/jobs/`) |
+| :--- | :--- | :--- |
+| **Input Boundary Validation** | Strict check for missing, empty string, and whitespace-only (`.strip()`), returning clean HTTP `400 Bad Request`. | Relies on basic Pydantic model (`topic: str`). Accepts whitespace strings like `"   "` without validation; returns `422` instead of `400` on missing keys. |
+| **Error Contract Shape** | Standardized JSON error contract `{"error": "Descriptive message"}` across all endpoints (400, 404). | Uses FastAPI default `HTTPException(404, detail="Not found")`, returning mismatched `{"detail": "..."}` shape. |
+| **Retry & Failure Handling** | Configured `retries=2` with `on_failure` handler capturing final failure state in in-memory registry (`status="failed"`). | Omitted explicit retry count or on_failure listener; failed runs remain permanently in `"pending"` status in database. |
+| **Step Durability & Types** | Typed `timedelta(seconds=8)` with separate callback steps and request timeout protection. | Used raw integer milliseconds `8000` with inline nested closures; prone to serialization issues on restarts. |
+| **Heartbeat Cron Reporting** | Aggregates and logs granular metrics: `pending`, `done`, and `failed` count breakdown. | Only printed generic count `len(ai_reports)` without status classification. |
+
+#### Rematch Evolution Note
+Upon updating the prompt to explicitly enforce `400 Bad Request` on whitespace input and explicit `retries=2` with on-failure recording, the AI implemented custom string validators, proving that AI code quality is directly bounded by specification precision.
 
 ---
 

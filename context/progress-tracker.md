@@ -2,16 +2,19 @@
 
 ## Current Phase
 
-- **Completed Assignment W6 — Put an LLM behind your API (`POST /tasks/triage`)**
-- Built single, high-leverage LLM decision step for classifying, prioritizing, and estimating inbound tasks.
-- Enforced strict closed enums (`category`, `urgency`, `estimated_effort`), non-empty bounds validation, and "when unsure" fallback rules.
-- Implemented isolated user message injection defense (JSON-encoded content), single automated repair retry, quarantine logging (`logs/quarantine.jsonl`), explicit 30s timeout, selective retry backoff (429/5xx), and operational kill switch (`LLM_ENABLED=false`).
-- Achieved **87.5% passing score** on 8-case benchmark suite (`evals/run_evals.py`) with successful self-healing repair retry on live OpenRouter calls.
-- Completed Stage 6 AI rematch audit against `ai-version/llm/` and documented findings in `README.md`.
+- **Completed Assignment W7 (A7) — Your First Background Job & Cron Schedules**
+- Integrated Inngest Python SDK (`app_id="report-api"`) with FastAPI server at `/api/inngest`.
+- Implemented fast-door asynchronous pattern: `POST /reports` returns HTTP `202 Accepted` in <50ms with a unique tracking ID (`rep_<hex>`).
+- Implemented durable multi-step background workflow `make-report`: 8s sleep step (`step.sleep`) + build step (`step.run`), transitioning report state from `pending` to `done` (eventual consistency).
+- Enforced strict gatekeeper boundary validation: missing or empty `topic` returns HTTP `400 Bad Request` without dispatching background events.
+- Added failure injection and automated retry with exponential backoff on topic `"fail"`, configuring `retries=2` and an `on_failure` handler.
+- Implemented clock-driven scheduled cron function `heartbeat` (`* * * * *`) aggregating and logging system metrics.
+- Completed Bonus Stage 6 AI Rematch in `ai-version/jobs/` with side-by-side audit documented in `README.md`.
+- Verified 100% pass rate on 9-test automated suite (`test_jobs.py`).
 
 ## Current Goal
 
-- Completed W2, W3 (Database), W3 (Containerization), W4 (Auth), W5 (Scraper), and W6 (LLM). Ready to implement **Milestone W7 (Your First Background Job)** and **Milestone W7b (PDF Report Generator)**.
+- Completed W2 (CRUD), W3 (Database & Docker), W4 (Auth), W5 (Scraper), W6 (LLM Triage), and W7 (Background Jobs). Ready to implement **Milestone W7b (A8): PDF Report Generator** using Playwright and SQL aggregation.
 
 ## Completed Tasks
 
@@ -21,22 +24,20 @@
 - [x] **Assignment W4 — Auth - Login & protect**: Supabase Auth IdP integration, `/auth/signup`, `/auth/login`, `/auth/logout`, protected `/protected/profile` route, JWT verification middleware, and Swagger UI Bearer Auth setup.
 - [x] **Assignment W5 — The polite scraper**: Books to Scrape ingestion pipeline, target classification, local HTML snapshot caching (`cache/`), Pydantic validation (`books.json` / `errors.json`), error resilience, and structured reporting (`run-report.json`).
 - [x] **Assignment W6 — Put an LLM behind your API (`POST /tasks/triage`)**: Pydantic schemas, versioned prompt (`prompts/task-triage-v1.md`), single-repair retry loop, quarantine logging, 30s timeout, rate-limit backoff, telemetry logging, stub mode, kill switch, benchmark runner (`evals/run_evals.py`), and AI rematch audit.
-- [x] **Context Synchronization**: Comprehensive update of `context/` documentation incorporating W7 (Background Jobs with Inngest) and W7b (PDF Report Generator with Playwright & SQL aggregation).
+- [x] **Assignment W7 (A7) — Your First Background Job (Inngest)**:
+  - [x] **Stage 0**: Hello, server — Verify `GET /health` on port 8000 and dependencies.
+  - [x] **Stage 1**: Connect Inngest client (`report-api`), register `say-hello` with 5-second sleep step, mount `/api/inngest`, test via Inngest Dev Server dashboard (`:8288`).
+  - [x] **Stage 2**: Fast door — `POST /reports` returns HTTP 202 Accepted in <1s, triggers `report/requested` event; Inngest runs `make-report` (8s sleep + build step); status endpoint `GET /reports/:id` tracks `pending` $\rightarrow$ `done`.
+  - [x] **Stage 3**: Retries & Error Handling — Simulate failure on topic `"fail"`, observe 3 attempts with backoff in dashboard ending `Failed`; reject missing topic with `400 Bad Request` without creating jobs.
+  - [x] **Stage 4**: Cron Heartbeat — Add `heartbeat` cron function running every minute (`* * * * *`) logging system counts.
+  - [x] **Stage 5**: Publish & Documentation — Document API and Dev Server commands, endpoints/functions table, and 202+polling proof.
+  - [x] **Stage 6**: AI Rematch — Quarantine generation in `ai-version/jobs/`, test diffing, and "AI vs Me" audit.
 
 ## In Progress
 
 - None.
 
 ## Next Up
-
-### Milestone W7 / A7 — Your First Background Job (Inngest)
-- [ ] **Stage 0**: Hello, server — Verify `GET /health` on port 8000.
-- [ ] **Stage 1**: Connect Inngest client (`report-api`), register `say-hello` with 5-second sleep step, mount `/api/inngest`, test via Inngest Dev Server dashboard (`:8288`).
-- [ ] **Stage 2**: Fast door — `POST /reports` returns HTTP 202 Accepted in <1s, triggers `report/requested` event; Inngest runs `make-report` (8s sleep + build step); status endpoint `GET /reports/:id` tracks `pending` $\rightarrow$ `done`.
-- [ ] **Stage 3**: Retries & Error Handling — Simulate failure on topic `"fail"`, observe 3 attempts with backoff in dashboard ending `Failed`; reject missing topic with `400 Bad Request` without creating jobs.
-- [ ] **Stage 4**: Cron Heartbeat — Add `heartbeat` cron function running every minute (`* * * * *`) logging system counts.
-- [ ] **Stage 5**: Publish & Documentation — Document API and Dev Server commands, endpoints/functions table, and 202+polling proof.
-- [ ] **Stage 6**: AI Rematch — Quarantine generation in `ai-version/jobs/`, test diffing, and "AI vs Me" audit.
 
 ### Milestone W7b / A8 — PDF Report Generator (Playwright & SQL Aggregation)
 - [ ] **Stage 0**: Setup — Install Playwright and headless Chromium (`playwright install chromium`).
