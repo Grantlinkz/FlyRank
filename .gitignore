@@ -26,7 +26,9 @@ htmlcov/
 *.sqlite
 *.sqlite3
 tasks.db
+report.db
 taskdata/
+reports/
 
 # Scraping Pipeline Caches & Downloads
 cache/
