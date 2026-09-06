@@ -9,6 +9,17 @@ import database
 import auth
 from auth import get_current_user, AuthException
 from fastapi.exceptions import RequestValidationError
+import inngest
+import inngest.fast_api
+from src.jobs import (
+    inngest_client,
+    say_hello,
+    make_report,
+    heartbeat,
+    create_report,
+    get_report,
+    get_all_reports,
+)
 from src.llm import (
     triage_task,
     TaskTriageRequest,
@@ -33,6 +44,13 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan
+)
+
+# Mount Inngest background job handler at /api/inngest
+inngest.fast_api.serve(
+    app,
+    inngest_client,
+    [say_hello, make_report, heartbeat],
 )
 
 # Exception Handler for Custom Auth Errors
@@ -111,6 +129,22 @@ class LoginRequest(BaseModel):
     email: Optional[str] = Field(None, example="user@example.com")
     password: Optional[str] = Field(None, example="password123")
 
+class ReportCreateRequest(BaseModel):
+    topic: Optional[str] = Field(None, description="Topic for the report to generate", example="cats")
+
+class ReportAcceptedResponse(BaseModel):
+    id: str = Field(..., description="Unique tracking ID of the report", example="rep_a1b2c3d4")
+    status: str = Field(..., description="Lifecycle status", example="pending")
+
+class ReportDetailResponse(BaseModel):
+    id: str = Field(..., description="Unique tracking ID of the report", example="rep_a1b2c3d4")
+    topic: str = Field(..., description="Topic of the report", example="cats")
+    status: str = Field(..., description="Lifecycle status (pending, done, failed)", example="pending")
+    result: Optional[str] = Field(None, description="Result payload if finished", example="Report on 'cats' generated successfully.")
+    created_at: Optional[str] = Field(None, description="Timestamp of generation request")
+    attempts: Optional[int] = Field(None, description="Execution attempts count")
+    error: Optional[str] = Field(None, description="Error message if failed")
+
 # --- Metadata & Public Endpoints ---
 
 @app.get(
@@ -124,7 +158,15 @@ def get_root():
     return {
         "name": "Task API",
         "version": "1.0",
-        "endpoints": ["/tasks", "/tasks/triage", "/auth/signup", "/auth/login", "/protected/profile"]
+        "endpoints": [
+            "/tasks",
+            "/tasks/triage",
+            "/reports",
+            "/api/inngest",
+            "/auth/signup",
+            "/auth/login",
+            "/protected/profile",
+        ]
     }
 
 @app.get(
@@ -399,3 +441,77 @@ def triage_task_endpoint(payload: TaskTriageRequest):
     """
     response, _ = triage_task(payload)
     return response
+
+
+# --- Background Jobs & Reports Endpoints (Milestone W7) ---
+
+@app.post(
+    "/reports",
+    status_code=202,
+    response_model=ReportAcceptedResponse,
+    summary="Request Asynchronous Report (Fast Door)",
+    description="Accepts report generation requests immediately (<1s) returning HTTP 202 Accepted and offloads execution to an Inngest background job.",
+    tags=["Reports & Jobs"]
+)
+async def create_report_endpoint(payload: ReportCreateRequest):
+    """Fast-door endpoint: validates input, registers pending state, dispatches Inngest event, returns 202."""
+    if not payload.topic or not payload.topic.strip():
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Topic is required and cannot be empty"}
+        )
+    
+    clean_topic = payload.topic.strip()
+    report = create_report(clean_topic)
+    
+    # Dispatch durable background job event to Inngest
+    try:
+        await inngest_client.send(
+            inngest.Event(
+                name="report/requested",
+                data={
+                    "id": report["id"],
+                    "topic": clean_topic
+                }
+            )
+        )
+    except Exception as e:
+        print(f"[WARN] Inngest event dispatch notice: {e}", flush=True)
+    
+    return JSONResponse(
+        status_code=202,
+        content={
+            "id": report["id"],
+            "status": "pending"
+        }
+    )
+
+
+@app.get(
+    "/reports",
+    response_model=List[Dict[str, Any]],
+    summary="List All Reports",
+    description="Control panel endpoint returning all tracked reports and their statuses.",
+    tags=["Reports & Jobs"]
+)
+def list_reports():
+    """Retrieve all reports and their current statuses."""
+    return get_all_reports()
+
+
+@app.get(
+    "/reports/{id}",
+    response_model=ReportDetailResponse,
+    summary="Get Report Status & Result (Polling)",
+    description="Status endpoint for polling background job progress. Answers 'pending' first, then 'done' with the result.",
+    tags=["Reports & Jobs"]
+)
+def get_report_endpoint(id: str):
+    """Retrieve report status by ID or return 404 if not found."""
+    report = get_report(id)
+    if not report:
+        return JSONResponse(
+            status_code=404,
+            content={"error": f"Report '{id}' not found"}
+        )
+    return report
