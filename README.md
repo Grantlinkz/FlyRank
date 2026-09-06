@@ -89,11 +89,23 @@ graph TD
 
     subgraph Data Ingestion Pipeline
         Scraper[Scraper CLI - scraper/main.py] -->|Check Rules| Robots[robots.txt]
-        Scraper -->|Polite Fetch (500ms Delay)| Target[Books to Scrape]
+        Scraper -->|Polite Fetch 500ms Delay| Target[Books to Scrape]
         Scraper -->|Save / Read HTML| Cache[(Local Disk Cache - scraper/cache/)]
         Scraper -->|BeautifulSoup Parsing| Parser[parser.py]
         Parser -->|Validate & Normalize| Validator[validator.py - Pydantic]
         Validator -->|Write Output| OutputFiles[scraper/output/ - books.json & run-report.json]
+    end
+
+    subgraph Background Jobs & Cron
+        FastAPI -->|Fast Door 202 Dispatch| InngestClient[Inngest Client]
+        InngestClient -->|Durable Steps & Retries| Worker[make-report & heartbeat functions]
+    end
+
+    subgraph Document Reporting Pipeline Store & Link
+        FastAPI -->|SQL Aggregations| RepDB[(report.db - SQLite)]
+        FastAPI -->|HTML + Defensive Print CSS| Renderer[Playwright Headless Chromium]
+        Renderer -->|Save PDF| Storage[(PDF Storage - reports/<id>.pdf)]
+        FastAPI -->|Stream Binary Link| FileResponse[FileResponse - GET /reports/:id/file]
     end
 ```
 
@@ -106,11 +118,32 @@ FlyRank/
 ├── main.py                     # FastAPI application entry point, route definitions & OpenAPI specs
 ├── database.py                 # Database repository layer (SQLite & PostgreSQL parameterized queries)
 ├── auth.py                     # Supabase Auth client integration & FastAPI JWT dependency middleware
-├── requirements.txt            # Python dependencies (FastAPI, Pydantic v2, Supabase, BeautifulSoup4, etc.)
-├── Dockerfile                  # Container build instructions for FastAPI backend
-├── compose.yaml                # Docker Compose multi-container stack configuration (API + Postgres)
+├── requirements.txt            # Python dependencies (FastAPI, Playwright, Inngest, Pydantic v2, etc.)
+├── Dockerfile                  # Container build instructions with Playwright Chromium & OS libraries
+├── compose.yaml                # Docker Compose stack (API + Postgres + shm_size 1gb + volumes)
 ├── .env                        # Local environment secrets & connection strings (git-ignored)
 ├── .env.example                # Template for environment configuration
+├── test_jobs.py                # Automated test suite for Background Jobs & Inngest flows (Milestone W7)
+├── test_reports.py             # Automated test suite for PDF Report Generator (Milestone W7b)
+├── test_database.py            # Automated tests for SQL persistence layer
+│
+├── src/                        # Core Application Engine Modules
+│   ├── reports/                # PDF Report Generator Engine (Milestone W7b)
+│   │   ├── database.py         # SQLite connection manager & schema initialization for report.db
+│   │   ├── seed.py             # Idempotent dataset seeder (60 books from books.json)
+│   │   ├── queries.py          # Pure SQL aggregation queries (COUNT, AVG, GROUP BY, Top 5)
+│   │   ├── template.py         # Executive HTML layout with defensive print CSS (@page, thead, break-inside)
+│   │   ├── renderer.py         # Playwright headless Chromium PDF printer
+│   │   └── service.py          # Store-and-link orchestration & daily idempotency protection
+│   ├── jobs/                   # Background Jobs & Inngest Integration (Milestone W7)
+│   │   ├── client.py           # Inngest client configuration
+│   │   ├── functions.py        # Durable steps, retries, and heartbeat cron function
+│   │   └── state.py            # In-memory job state registry & transitions
+│   └── llm/                    # Resilient LLM Task Triage Engine (Milestone W6)
+│       ├── triage.py           # Job Card schema, validation, repair retries & fallback
+│       └── client.py           # OpenRouter & local model HTTP client wrapper
+│
+├── reports/                    # Generated PDF report artifacts (git-ignored)
 │
 ├── scraper/                    # Polite Data Ingestion Pipeline (Milestone W5)
 │   ├── main.py                 # Scraper runner, URL discovery, crawler loop & report generator
@@ -125,9 +158,13 @@ FlyRank/
 │       └── run-report.json     # Execution timing, cache hits & politeness metrics
 │
 ├── ai-version/                 # AI Rematch Audit Quarantine Environment ("AI vs Me")
-│   ├── main.py                 # AI-generated FastAPI app quarantine benchmark
-│   └── scraper/
-│       └── main.py             # AI-generated scraper quarantine benchmark
+│   ├── main.py                 # AI-generated FastAPI baseline benchmark
+│   ├── reports/                # AI-generated PDF generator quarantine implementation
+│   │   └── main.py
+│   ├── jobs/                   # AI-generated background jobs quarantine implementation
+│   │   └── main.py
+│   └── scraper/                # AI-generated scraper quarantine benchmark
+│       └── main.py
 │
 ├── context/                    # Project Documentation & Architecture Specifications
 │   ├── project-overview.md     # High-level goals, core user flow & scope definitions
@@ -139,12 +176,14 @@ FlyRank/
 │   └── zContext.md            # Directory index and context overview
 │
 └── Tasks/                      # Curriculum Milestone Specifications & Tasks
-    ├── Tasks.md                # Task matrix, endpoints reference & W5 assignment breakdown
+    ├── Tasks.md                # Task matrix, endpoints reference & milestone breakdowns
     ├── W2 - Build your first CRUD API.pdf
     ├── W3 - Connecting your CRUD to the database.pdf
     ├── W3 - Containerize your stack(2).pdf
     ├── W4 - Auth - Login.pdf
-    └── W5 - The polite scraper.pdf
+    ├── W5 - The polite scraper.pdf
+    ├── W7 - Your first background job.pdf
+    └── W7b - PDF report generator.pdf
 ```
 
 ---
@@ -167,8 +206,16 @@ All REST API endpoints are documented interactively via OpenAPI at `http://local
 | **Tasks**  | `POST`    | `/tasks`             | None             | Create a new task item (`title` required)                   | `201 Created`, `400 Bad Request`               |
 | **Tasks**  | `PUT`     | `/tasks/{id}`        | None             | Update task `title` and/or `done` status                   | `200 OK`, `400 Bad Request`, `404 Not Found` |
 | **Tasks**  | `DELETE`  | `/tasks/{id}`        | None             | Delete task by ID                                             | `204 No Content`, `404 Not Found`              |
+| **Tasks / LLM** | `POST` | `/tasks/triage`     | None             | Classifies, prioritizes, and estimates tasks via LLM          | `200 OK`, `400 Bad Request`, `503 Unavailable`  |
+| **Jobs (W7)** | `POST` | `/reports`            | None             | Dispatches asynchronous background report generation (`topic`)| `202 Accepted`, `400 Bad Request`              |
+| **Jobs (W7)** | `GET`  | `/reports`            | None             | Control panel listing tracked jobs / reports (`?type=pdf`)   | `200 OK`                                         |
+| **Jobs (W7)** | `GET`  | `/reports/{id}`       | None             | Polls background job status / returns PDF metadata            | `200 OK`, `404 Not Found`                      |
+| **Jobs (W7)** | `GET/POST`| `/api/inngest`     | None             | Inngest function runner communication endpoint                | `200 OK`                                         |
+| **Reports (W7b)** | `POST` | `/reports`        | None             | Generates PDF report synchronously (Store & Link, 201 / 200)  | `201 Created`, `200 OK`                          |
+| **Reports (W7b)** | `GET`  | `/reports/{id}/file` | None          | Streams binary PDF artifact via `FileResponse`               | `200 OK` (`application/pdf`), `404 Not Found`   |
 | **Extras** | `GET`     | `/stats`             | None             | Retrieve task count metrics (total, completed, open)          | `200 OK`                                         |
 | **Extras** | `POST`    | `/reset`             | `Bearer Token` | Re-seeds database table with initial 3 sample tasks           | `200 OK`, `401 Unauthorized`                   |
+
 
 ---
 
@@ -664,7 +711,28 @@ curl -s http://localhost:8000/tasks
 python scraper/main.py
 ```
 
+### 4. Run Automated Test Suites
+
+```bash
+# Run comprehensive automated tests for reports and background jobs (16 test cases)
+python -m pytest -p no:faker -p no:pytest_faker test_reports.py test_jobs.py -v
+```
+
+### 5. Generate & Download PDF Report (Store & Link)
+
+```bash
+# 1. Trigger report generation (returns HTTP 201 with file download link)
+curl -i -X POST http://localhost:8000/reports
+
+# 2. Download the binary PDF directly from the server
+curl -o my-report.pdf http://localhost:8000/reports/1/file
+
+# 3. Test duplicate idempotency (returns HTTP 200 with identical report ID)
+curl -i -X POST http://localhost:8000/reports
+```
+
 ---
+
 
 ## 📄 License
 
