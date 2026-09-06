@@ -5,7 +5,9 @@
 *.sqlite
 *.sqlite3
 tasks.db
+report.db
 taskdata/
+reports/
 cache/
 scraper/cache/
 logs/
