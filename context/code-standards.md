@@ -64,6 +64,26 @@
 - **Single Repair Retry & Quarantine**: If initial model output fails JSON or Pydantic validation, trigger exactly one repair request containing the original prompt, malformed output, and validation error. Persistent failures must be appended to `logs/quarantine.jsonl` and return HTTP `422 Unprocessable Entity`.
 - **Zero Quota Bleed & Observability**: Support `LLM_STUB=1` returning fixture responses for offline development and testing. Emit single-line structured JSON telemetry logs (`prompt_version`, `model`, tokens, `duration_ms`, `repaired`) to `stdout`.
 
+## Background Jobs & Inngest Standards
+
+- **Client Registration & Routing**: Initialize Inngest client with unique identifier (`report-api`). Serve registered functions via FastAPI adapter (`inngest.fast_api.serve(app, inngest_client, [say_hello, make_report, heartbeat])`) mounted at `/api/inngest`.
+- **Durable Step Isolation**: Decompose long operations into named steps using `step.sleep(name, duration)` and `step.run(name, callback)`. Durable steps allow restarted servers to skip already-completed steps without repeating side effects.
+- **Fail Fast vs. Retry Boundary**:
+  - Malformed or missing request input (e.g. missing `topic`) must return `400 Bad Request` at the endpoint door and **must not dispatch events**.
+  - Background exceptions trigger automatic retries with exponential backoff. Configure explicit attempt limits (e.g. `retries=2` in `create_function`).
+- **Cron Scheduling**: Define recurring jobs using standard 5-field cron syntax (`inngest.TriggerCron(cron="* * * * *")`). Assume UTC timezone context. Recurring heartbeat functions must perform non-blocking bookkeeping queries.
+
+## PDF Generation & Artifact Standards
+
+- **Store and Link Architecture**: Always store rendered PDF files in local storage (`reports/<id>.pdf`) and serve by URL (`GET /reports/:id/file`) via `FileResponse(path, media_type="application/pdf")`. Never pass raw bytes or base64 blobs in JSON responses.
+- **SQL Aggregation First**: Compute summary metrics (`COUNT`, `SUM`, `AVG`, `GROUP BY`) in the database engine via SQL queries. Route handlers must never load 200+ raw records into memory to calculate totals in application loops.
+- **Print CSS Invariants**:
+  - Prevent sliced table rows across page breaks with explicit print CSS: `tr { break-inside: avoid; }`.
+  - Wrap table headers in `<thead>` to ensure headless browsers repeat the header row on every printed page.
+  - Page format must default to standard `A4` with `print_background=True` enabled.
+- **Idempotency & Double-Click Protection**: Endpoints generating reports must check whether a report for the target scope was already generated today. If present, return HTTP `200 OK` with the existing report ID and link without creating a new file. An explicit `{ "force": true }` payload overrides this check.
+- **Artifact & DB Git Exclusion**: Add `reports/` and `report.db` to `.gitignore`. Databases and produced artifacts are disposable; seed scripts and template code are the permanent recipes.
+
 ## Git Commit Conventions
 
 All Git commits across the platform must adhere to the Conventional Commits standard:
@@ -83,6 +103,10 @@ Use the `-m` git flag for concise or multi-line commit messages (e.g., `git comm
 - `src/repository/` — Database access layer & connection initialization.
 - `src/middleware/` — Auth token verification middleware.
 - `src/llm/` — LLM client provider, schema definitions, repair retry loop, and telemetry.
+- `src/jobs/` or `src/inngest/` — Inngest client, durable functions (`say-hello`, `make-report`, `heartbeat`), and serve route.
+- `src/reports/` — SQL aggregation queries, HTML report templating, and Playwright PDF generation logic.
+- `reports/` — Local disk storage for produced PDF artifacts (`reports/<id>.pdf`), git-ignored.
+- `report.db` — Standalone SQLite database for reporting datasets and report bookkeeping, git-ignored.
 - `prompts/` — Version-controlled prompt engineering specifications (`task-triage-v1.md`).
 - `evals/` — Benchmark evaluation test cases (`cases.json`) and evaluation runner (`run_evals.py`).
 - `logs/` — Runtime failure logs (`quarantine.jsonl`).

@@ -14,7 +14,8 @@ This document tracks all tasks, curriculum milestones, specifications, and endpo
 | **W4** | Identity Provider & JWT Security | Supabase Auth, Bearer Token Middleware, FastAPI Security | ✅ Completed |
 | **W5** | Polite Data Scraping Pipeline | Requests, BeautifulSoup4, Local Disk Cache, Pydantic Schema | ✅ Completed |
 | **W6** | Put an LLM Behind Your API (`/tasks/triage`) | OpenAI SDK, OpenRouter/Ollama, Pydantic v2, Prompt Engineering | ✅ Completed |
-| **W7 / Future**| Advanced Data Pipelines & Background Jobs | Celery / Redis / RQ / Async background task processing | ⏳ Backlog |
+| **W7 (A7)** | Your First Background Job | Inngest, Event-driven steps, Durable workflows, Cron scheduler | ⏳ Up Next |
+| **W7b (A8)** | PDF Report Generator | SQLite Aggregation, HTML Templates, Playwright Headless Chromium | ⏳ Up Next |
 
 ---
 
@@ -103,12 +104,32 @@ This document tracks all tasks, curriculum milestones, specifications, and endpo
 
 ---
 
-### Backlog & Future Tasks (Milestone W6+)
+### Milestone W7: Your First Background Job (Assignment A7)
 
-- [ ] **Task 6.1**: Database Ingestion Pipeline: Automatically ingest scaped `books.json` into a PostgreSQL `books` table via a FastAPI background task.
-- [ ] **Task 6.2**: Rate Limiting & Throttling Middleware: Add `slowapi` rate limiting to authentication endpoints (`/auth/login`, `/auth/signup`).
-- [ ] **Task 6.3**: Asynchronous Crawler: Refactor `scraper/` to utilize `httpx` and `asyncio` for non-blocking asynchronous page crawling.
-- [ ] **Task 6.4**: Automated CI/CD Pipeline: Create GitHub Actions workflow for linting, pytest suite execution, and Docker build testing.
+- [ ] **Task 7.1**: Setup baseline health endpoint (`GET /health`).
+- [ ] **Task 7.2**: Connect Inngest client (`report-api`), define initial `say-hello` function with 5-second sleep step, mount FastAPI serve endpoint at `/api/inngest`, and connect Inngest Dev Server (`localhost:8288`).
+- [ ] **Task 7.3**: Implement fast-door endpoint `POST /reports` returning HTTP `202 Accepted` + `{ "id": ..., "status": "pending" }` in <1s and dispatching `report/requested` event.
+- [ ] **Task 7.4**: Implement durable background function `make-report` with `step.sleep("8s")` and `step.run("build-report")` updating in-memory status to `done`.
+- [ ] **Task 7.5**: Implement polling status endpoint `GET /reports/{id}` returning lifecycle status (`pending`, `done`, `failed`) and result.
+- [ ] **Task 7.6**: Implement error handling and retry mechanism (`retries=2`) simulating failure on topic `"fail"` with exponential backoff.
+- [ ] **Task 7.7**: Add boundary input validation on `POST /reports` returning `400 Bad Request` on missing topic without dispatching background events.
+- [ ] **Task 7.8**: Implement scheduled cron function `heartbeat` triggered every minute (`TriggerCron(cron="* * * * *")`) logging job metrics.
+- [ ] **Task 7.9**: Execute AI Rematch Audit in `ai-version/jobs/` comparing prompt precision, retry policy, and durable execution.
+
+---
+
+### Milestone W7b: PDF Report Generator (Assignment A8)
+
+- [ ] **Task 8.1**: Setup Playwright headless Chromium environment (`playwright install chromium`).
+- [ ] **Task 8.2**: Create reporting SQLite database `report.db` and write idempotent seed script (reusing `books.json` or orders dataset).
+- [ ] **Task 8.3**: Write SQL aggregation query module extracting 4 key business metrics (`COUNT`, `SUM`, `AVG`, `GROUP BY`).
+- [ ] **Task 8.4**: Build HTML template with print CSS rules (`tr { break-inside: avoid; }`, repeating `<thead>`) and render $\ge 2$ page PDF via Playwright.
+- [ ] **Task 8.5**: Implement "store and link" API endpoints:
+  - `POST /reports` - Executes pipeline, saves `reports/<id>.pdf` and DB record, returns `201 Created` + file link.
+  - `GET /reports/{id}` - Returns report metadata and download link.
+  - `GET /reports/{id}/file` - Streams binary PDF file via `FileResponse`.
+- [ ] **Task 8.6**: Implement double-click idempotency: same-day duplicate requests return `200 OK` with existing report ID (no duplicate file created); support `{ "force": true }` bypass.
+- [ ] **Task 8.7**: Execute AI Rematch Audit in `ai-version/reports/` auditing page-break CSS, file-serving patterns, and SQL aggregations.
 
 ---
 
@@ -129,6 +150,11 @@ This document tracks all tasks, curriculum milestones, specifications, and endpo
 | **Tasks** | `PUT` | `/tasks/{id}` | None | `{"title": "...", "done": true}` | `200 OK` (Task object) | `400 Bad Request`, `404 Not Found` |
 | **Tasks** | `DELETE` | `/tasks/{id}` | None | Path param: `id` (int) | `204 No Content` | `404 Not Found` |
 | **Tasks / LLM** | `POST` | `/tasks/triage` | None | `{"title": "...", "context": "..."}` | `200 OK` (`TaskTriageResponse`) | `400 Bad Request`, `422 Unprocessable`, `503 Unavailable`, `504 Timeout` |
+| **Jobs (W7)**| `POST` | `/reports` | None | `{"topic": "cats"}` | `202 Accepted` (`{"id":..., "status":"pending"}`) | `400 Bad Request` |
+| **Jobs (W7)**| `GET` | `/reports/{id}` | None | Path param: `id` | `200 OK` (`{"status":"done", ...}`) | `404 Not Found` |
+| **Jobs (W7)**| `POST/GET`| `/api/inngest` | None | Internal Inngest protocol | Inngest function handlers | N/A |
+| **Reports (W7b)**| `POST`| `/reports` | None | Optional: `{"force": true}` | `201 Created` / `200 OK` (`{"id":..., "file":"..."}`) | `400 Bad Request` |
+| **Reports (W7b)**| `GET` | `/reports/{id}/file`| None | Path param: `id` | `200 OK` (`application/pdf` stream) | `404 Not Found` |
 | **Extras** | `GET` | `/stats` | None | None | `200 OK` (Counts object) | N/A |
 | **Extras** | `POST` | `/reset` | Bearer Token | Header: `Authorization: Bearer <jwt>` | `200 OK` (Reset Tasks array) | `401 Unauthorized` |
 

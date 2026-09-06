@@ -44,6 +44,37 @@ All server responses must follow a strict, predictable JSON shape.
   }
   ```
 
+- **Background Job Accepted (`POST /reports` - Fast Door)**:
+  ```json
+  {
+    "id": "rep_a1b2c3d4",
+    "status": "pending"
+  }
+  ```
+
+- **Background Job Status Polling (`GET /reports/:id`)**:
+  ```json
+  {
+    "id": "rep_a1b2c3d4",
+    "topic": "cats",
+    "status": "done",
+    "result": "Report completed successfully"
+  }
+  ```
+
+- **PDF Report Generation / Link (`POST /reports`, `GET /reports/:id`)**:
+  ```json
+  {
+    "id": 1,
+    "file": "/reports/1/file",
+    "created_at": "2026-09-06T12:00:00"
+  }
+  ```
+
+- **File Download Stream (`GET /reports/:id/file`)**:
+  - `Content-Type: application/pdf`
+  - Returns raw binary PDF bytes directly from disk storage via `FileResponse`.
+
 ### Error Response Contract
 
 All errors must return a JSON object containing a top-level `error` key with a human-readable explanation:
@@ -55,13 +86,14 @@ All errors must return a JSON object containing a top-level `error` key with a h
 
 | Status Code | Meaning | Usage Context |
 | ----------- | ------- | ------------- |
-| `200 OK` | Request succeeded | `GET` requests, `PUT` updates, `POST /auth/login`, `POST /tasks/triage` |
-| `201 Created` | Resource created | `POST /tasks`, `POST /auth/signup` |
+| `200 OK` | Request succeeded / Idempotent Hit | `GET` requests, `PUT` updates, `POST /auth/login`, `POST /tasks/triage`, duplicate `POST /reports` (cached report) |
+| `201 Created` | Resource created | `POST /tasks`, `POST /auth/signup`, fresh `POST /reports` (new PDF generated) |
+| `202 Accepted` | Accepted for background execution | `POST /reports` (fast-door background job dispatched to Inngest) |
 | `204 No Content` | Succeeded with empty body | `DELETE /tasks/:id`, `POST /auth/logout` |
-| `400 Bad Request` | Client payload validation failed | Missing or empty `title`, missing credentials, bounds check |
+| `400 Bad Request` | Client payload validation failed | Missing or empty `title`, missing `topic` on reports, invalid credentials |
 | `401 Unauthorized` | Authentication failed or missing | Missing, malformed, or expired JWT Bearer token |
 | `403 Forbidden` | Authenticated user unauthorized | Authenticated user lacks permission for target resource |
-| `404 Not Found` | Resource or endpoint missing | Requesting non-existent task ID or unknown route |
+| `404 Not Found` | Resource or endpoint missing | Requesting non-existent task ID, report ID, or unknown route |
 | `422 Unprocessable` | Unrepairable model schema failure | Model output failed validation after repair retry (quarantined) |
 | `429 Too Many Requests` | Rate limit exceeded | Excessive requests or provider rate limit |
 | `502 Bad Gateway` | Upstream provider error | LLM provider failure or network disruption |
