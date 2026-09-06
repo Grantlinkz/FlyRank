@@ -28,7 +28,7 @@ htmlcov/
 tasks.db
 report.db
 taskdata/
-reports/
+/reports/
 
 # Scraping Pipeline Caches & Downloads
 cache/
