@@ -2,19 +2,16 @@
 
 ## Current Phase
 
-- **Completed Assignment W7 (A7) — Your First Background Job & Cron Schedules**
-- Integrated Inngest Python SDK (`app_id="report-api"`) with FastAPI server at `/api/inngest`.
-- Implemented fast-door asynchronous pattern: `POST /reports` returns HTTP `202 Accepted` in <50ms with a unique tracking ID (`rep_<hex>`).
-- Implemented durable multi-step background workflow `make-report`: 8s sleep step (`step.sleep`) + build step (`step.run`), transitioning report state from `pending` to `done` (eventual consistency).
-- Enforced strict gatekeeper boundary validation: missing or empty `topic` returns HTTP `400 Bad Request` without dispatching background events.
-- Added failure injection and automated retry with exponential backoff on topic `"fail"`, configuring `retries=2` and an `on_failure` handler.
-- Implemented clock-driven scheduled cron function `heartbeat` (`* * * * *`) aggregating and logging system metrics.
-- Completed Bonus Stage 6 AI Rematch in `ai-version/jobs/` with side-by-side audit documented in `README.md`.
-- Verified 100% pass rate on 9-test automated suite (`test_jobs.py`).
+- **Completed All Milestones: W1-W2 (CRUD), W3 (Persistence & Docker), W4 (Auth), W5 (Scraper), W6 (LLM Triage), W7 (Background Jobs), and W7b (PDF Report Generator)**
+- **Milestone W6 (A17 — Put an LLM behind your API)**: Integrated OpenAI SDK / OpenRouter with versioned prompt specification (`prompts/task-triage-v1.md`), strict Pydantic v2 enums, zero-cost stub mode (`LLM_STUB=1`), 30s timeout, custom retry policy with backoff and jitter, repair retry loop with quarantine logging (`logs/quarantine.jsonl`), operational kill switch (`LLM_ENABLED=false`), and 8-case eval benchmark (`evals/run_evals.py`).
+- **Milestone W7 (A7 — Your First Background Job & Cron Schedules)**: Integrated Inngest Python SDK (`report-api`) with FastAPI server at `/api/inngest`. Implemented fast door `POST /reports` returning HTTP `202 Accepted` (<50ms), multi-step durable workflow `make-report` (`step.sleep` 8s + `step.run`), eventual consistency polling (`pending` -> `done`), `retries=2` on topic `"fail"`, boundary input validation (`400 Bad Request`), and every-minute scheduled heartbeat cron (`* * * * *`).
+- **Milestone W7b (A8 — PDF Report Generator)**: Implemented full Store & Link reporting pipeline: SQLite `report.db` idempotent seeding (60 books), pure SQL aggregations (`COUNT`, `AVG`, `SUM`, top 5, rating breakdown), defensive print CSS (`tr { break-inside: avoid; }`, repeating `<thead>`), Playwright headless Chromium PDF rendering ($\ge 2$ pages), API endpoints (`POST /reports` 201/200, `GET /reports/{id}`, `GET /reports/{id}/file` via `FileResponse`), and double-click idempotency protection (`DATE(created_at) = DATE('now')`).
+- **100% Automated Test Suite Passing**: 16/16 tests passing cleanly across `test_jobs.py` and `test_reports.py`.
+- **Comprehensive AI Rematch Audits**: Completed for W5 (Scraper), W6 (LLM), W7 (Jobs), and W7b (PDF Generator) in `ai-version/` with comparative diffs and documentation.
 
 ## Current Goal
 
-- Completed W2 (CRUD), W3 (Database & Docker), W4 (Auth), W5 (Scraper), W6 (LLM Triage), and W7 (Background Jobs). Ready to implement **Milestone W7b (A8): PDF Report Generator** using Playwright and SQL aggregation.
+- Production readiness, deployment verification, and platform maintenance. All curriculum track assignments (W1 through W7b) are fully implemented and verified.
 
 ## Completed Tasks
 
@@ -32,26 +29,27 @@
   - [x] **Stage 4**: Cron Heartbeat — Add `heartbeat` cron function running every minute (`* * * * *`) logging system counts.
   - [x] **Stage 5**: Publish & Documentation — Document API and Dev Server commands, endpoints/functions table, and 202+polling proof.
   - [x] **Stage 6**: AI Rematch — Quarantine generation in `ai-version/jobs/`, test diffing, and "AI vs Me" audit.
+- [x] **Assignment W7b (A8) — PDF Report Generator (Playwright & SQL Aggregation)**:
+  - [x] **Stage 0**: Setup — Installed Playwright and headless Chromium (`playwright install chromium`).
+  - [x] **Stage 1**: Dataset Seeding — Seeded SQLite `report.db` with 60 validated book records with idempotent rerun protection (`src/reports/seed.py`).
+  - [x] **Stage 2**: SQL Aggregation — Implemented 4-section SQL aggregations (`COUNT`, `AVG`, `SUM`, top 5, rating breakdown) in `src/reports/queries.py`.
+  - [x] **Stage 3**: Render HTML to PDF — Executive HTML template with print CSS (`tr { break-inside: avoid; }`, repeating `<thead>`), rendered via Playwright (`page.pdf`) $\ge 2$ clean pages without sliced rows.
+  - [x] **Stage 4**: Serve by Link — `POST /reports` executes pipeline, stores in `reports/<id>.pdf` and `report.db`, returns `201 Created` + file link; `GET /reports/:id/file` streams PDF binary via `FileResponse`.
+  - [x] **Stage 5**: Idempotency Check — Same-day duplicate `POST /reports` returns existing report with `200 OK` (0 duplicate files generated); `{ "force": true }` generates fresh file with `201 Created`.
+  - [x] **Stage 6**: Publish & Documentation — Documented SQL queries, run instructions, download proofs, and architectural answers in `README.md`.
+  - [x] **Stage 7**: AI Rematch — Quarantine generation in `ai-version/reports/`, diffing, and "AI vs Me" comparative audit.
 
 ## In Progress
 
-- None.
+- None (All milestones W1 through W7b fully completed and verified).
 
 ## Next Up
 
-### Milestone W7b / A8 — PDF Report Generator (Playwright & SQL Aggregation)
-- [ ] **Stage 0**: Setup — Install Playwright and headless Chromium (`playwright install chromium`).
-- [ ] **Stage 1**: Dataset Seeding — Seed SQLite `report.db` (reusing scraped `books.json` or orders dataset) with idempotent clean rerun logic.
-- [ ] **Stage 2**: SQL Aggregation — Implement 4-section aggregation query (`COUNT`, `SUM`, `AVG`, `GROUP BY`) returning structured summary JSON.
-- [ ] **Stage 3**: Render HTML to PDF — HTML template with print CSS (`tr { break-inside: avoid; }`, `<thead>` repeat), rendered via Playwright (`page.pdf`) $\ge 2$ clean pages.
-- [ ] **Stage 4**: Serve by Link — `POST /reports` runs pipeline, stores in `reports/<id>.pdf` and `report.db`, returns `201 Created` + file link; `GET /reports/:id/file` streams PDF via `FileResponse`.
-- [ ] **Stage 5**: Idempotency Check — Same-day duplicate `POST /reports` returns existing report with `200 OK` (one file created); `{ "force": true }` generates fresh file.
-- [ ] **Stage 6**: Publish & Documentation — Document SQL queries, run instructions, and PDF screenshot.
-- [ ] **Stage 7**: AI Rematch — Quarantine generation in `ai-version/reports/`, test diffing, and "AI vs Me" audit.
+- Continuous integration, performance benchmarking, and cloud deployment pipelines.
 
 ## Open Questions
 
-- None. Language choice confirmed as Python.
+- None. Python lane architecture fully established.
 
 ## Architecture Decisions
 
@@ -62,7 +60,10 @@
 - **Durable Background Execution (Inngest)**: Slow operations (>1s) are offloaded to Inngest step functions. API returns `202 Accepted` immediately, preventing request timeouts and double-execution while providing status polling.
 - **Store & Link Artifact Pattern (Playwright)**: Generated PDFs are rendered using headless Chromium with print CSS page-break rules, stored on disk (`reports/<id>.pdf`), and served via direct file links (`FileResponse`). JSON responses never pass binary blobs.
 - **Report Idempotency**: Daily report requests are deduplicated by checking `report.db` before running expensive browser rendering, saving resources unless bypassed with `{ "force": true }`.
+- **Quarantined AI Rematch Audits**: Every major subsystem includes an isolated implementation in `ai-version/` to systematically evaluate AI code generation against human-engineered production safety patterns.
 
 ## Session Notes
 
-- Synchronized `context/` documentation across all 6 core files to incorporate complete specifications for Assignment A7 (Your first background job) and Assignment A8 (PDF report generator). Ready for implementation.
+- Completed verification and testing of Milestones W6, W7, and W7b. All 16 automated tests in `test_jobs.py` and `test_reports.py` pass cleanly.
+- Updated `Tasks.md`, `README.md`, and `context/progress-tracker.md` to reflect full completion status across all milestones.
+

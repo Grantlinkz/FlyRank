@@ -27,7 +27,7 @@ FlyRank evolves through spec-driven milestones: establishing RESTful CRUD servic
 - [Milestone W6: Put an LLM Behind Your API (`POST /tasks/triage`)](#-milestone-w6-put-an-llm-behind-your-api-post-taskstriage)
 - [Milestone W7: Your First Background Job & Cron Schedules](#-milestone-w7-your-first-background-job--cron-schedules)
 - [Milestone W7b: PDF Report Generator (Assignment A8)](#-milestone-w7b-pdf-report-generator-assignment-a8)
-- [AI Rematch Audit: LLM Triage vs Background Jobs vs PDF Reports](#️-ai-rematch-audit)
+- [AI Rematch Audit ("AI vs Me")](#️-ai-rematch-audit-ai-vs-me)
 - [Verification & Testing](#-verification--testing)
 - [License](#-license)
 
@@ -387,9 +387,13 @@ python evals/run_evals.py --stub
 ```
 
 #### Benchmark Results Summary
-- **Accuracy**: **87.5% (7/8 Passed)**
+- **Eval Date**: October 9, 2026 (Baseline: September 6, 2026)
+- **Prompt Version**: `task-triage-v1` ([`prompts/task-triage-v1.md`](prompts/task-triage-v1.md))
+- **Eval Score**: **87.5% (7/8 Passed)** on 8 labelled cases in [`evals/cases.json`](evals/cases.json)
 - **Prompt Injection Defense**: **100% Passed** (Adversarial attack was cleanly classified as `other` with `confidence: 0.10`).
 - **Self-Healing Repair Loop**: Triggered and validated on malformed JSON outputs without failing the client request (`repaired: true`).
+
+> **What I'd fix with another day**: I would enable provider-level structured output schemas (`response_format` JSON schema mode) where supported to eliminate malformed JSON repairs at the network boundary, and add an LRU in-memory request cache keyed on `SHA256(input + prompt_version)` so identical task submissions return instantly without burning provider token quota.
 
 ### 5. Telemetry & Cost Projection (10,000 req/day)
 
