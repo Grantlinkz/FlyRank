@@ -14,8 +14,8 @@ This document tracks all tasks, curriculum milestones, specifications, and endpo
 | **W4** | Identity Provider & JWT Security | Supabase Auth, Bearer Token Middleware, FastAPI Security | ✅ Completed |
 | **W5** | Polite Data Scraping Pipeline | Requests, BeautifulSoup4, Local Disk Cache, Pydantic Schema | ✅ Completed |
 | **W6** | Put an LLM Behind Your API (`/tasks/triage`) | OpenAI SDK, OpenRouter/Ollama, Pydantic v2, Prompt Engineering | ✅ Completed |
-| **W7 (A7)** | Your First Background Job | Inngest, Event-driven steps, Durable workflows, Cron scheduler | ⏳ Up Next |
-| **W7b (A8)** | PDF Report Generator | SQLite Aggregation, HTML Templates, Playwright Headless Chromium | ⏳ Up Next |
+| **W7 (A7)** | Your First Background Job | Inngest, Event-driven steps, Durable workflows, Cron scheduler | ✅ Completed |
+| **W7b (A8)** | PDF Report Generator | SQLite Aggregation, HTML Templates, Playwright Headless Chromium | ✅ Completed |
 
 ---
 
@@ -106,15 +106,15 @@ This document tracks all tasks, curriculum milestones, specifications, and endpo
 
 ### Milestone W7: Your First Background Job (Assignment A7)
 
-- [ ] **Task 7.1**: Setup baseline health endpoint (`GET /health`).
-- [ ] **Task 7.2**: Connect Inngest client (`report-api`), define initial `say-hello` function with 5-second sleep step, mount FastAPI serve endpoint at `/api/inngest`, and connect Inngest Dev Server (`localhost:8288`).
-- [ ] **Task 7.3**: Implement fast-door endpoint `POST /reports` returning HTTP `202 Accepted` + `{ "id": ..., "status": "pending" }` in <1s and dispatching `report/requested` event.
-- [ ] **Task 7.4**: Implement durable background function `make-report` with `step.sleep("8s")` and `step.run("build-report")` updating in-memory status to `done`.
-- [ ] **Task 7.5**: Implement polling status endpoint `GET /reports/{id}` returning lifecycle status (`pending`, `done`, `failed`) and result.
-- [ ] **Task 7.6**: Implement error handling and retry mechanism (`retries=2`) simulating failure on topic `"fail"` with exponential backoff.
-- [ ] **Task 7.7**: Add boundary input validation on `POST /reports` returning `400 Bad Request` on missing topic without dispatching background events.
-- [ ] **Task 7.8**: Implement scheduled cron function `heartbeat` triggered every minute (`TriggerCron(cron="* * * * *")`) logging job metrics.
-- [ ] **Task 7.9**: Execute AI Rematch Audit in `ai-version/jobs/` comparing prompt precision, retry policy, and durable execution.
+- [x] **Task 7.1**: Setup baseline health endpoint (`GET /health`).
+- [x] **Task 7.2**: Connect Inngest client (`report-api`), define initial `say-hello` function with 5-second sleep step, mount FastAPI serve endpoint at `/api/inngest`, and connect Inngest Dev Server (`localhost:8288`).
+- [x] **Task 7.3**: Implement fast-door endpoint `POST /reports` returning HTTP `202 Accepted` + `{ "id": ..., "status": "pending" }` in <1s and dispatching `report/requested` event.
+- [x] **Task 7.4**: Implement durable background function `make-report` with `step.sleep("8s")` and `step.run("build-report")` updating in-memory status to `done`.
+- [x] **Task 7.5**: Implement polling status endpoint `GET /reports/{id}` returning lifecycle status (`pending`, `done`, `failed`) and result.
+- [x] **Task 7.6**: Implement error handling and retry mechanism (`retries=2`) simulating failure on topic `"fail"` with exponential backoff.
+- [x] **Task 7.7**: Add boundary input validation on `POST /reports` returning `400 Bad Request` on missing topic without dispatching background events.
+- [x] **Task 7.8**: Implement scheduled cron function `heartbeat` triggered every minute (`TriggerCron(cron="* * * * *")`) logging job metrics.
+- [x] **Task 7.9**: Execute AI Rematch Audit in `ai-version/jobs/` comparing prompt precision, retry policy, and durable execution.
 
 ---
 
